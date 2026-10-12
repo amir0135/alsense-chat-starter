@@ -13,14 +13,6 @@ const STATUS_LABELS = {
   not_in_data: "Not in the demo data",
   out_of_scope: "Outside this demo",
 };
-const TOOL_LABELS = {
-  resolve_sites: "Permitted sites",
-  search_docs: "Operations guidance",
-  list_report_types: "Available reports",
-  get_report_status: "Report status",
-  prepare_report: "Report preparation",
-  prepare_support_ticket: "Support request",
-};
 const TOOL_PROGRESS = {
   resolve_sites: "Checking the sites available in this session…",
   search_docs: "Looking through the operations guidance…",
@@ -138,10 +130,22 @@ function textParagraphs(parent, text, className) {
   }
 }
 
-function renderSites(data, parent) {
+function renderSites(data, parent, text) {
   if (!Array.isArray(data) || data.length === 0) return;
+  const lowered = String(text || "").toLowerCase();
+  const named = data.every((site) => site.name && lowered.includes(site.name.toLowerCase()));
+  const alarms = data.flatMap((site) => (Array.isArray(site.alarms) ? site.alarms : []).map((alarm) => ({ site, alarm })));
+  if (named && alarms.length === 0) return;
   const list = node("ul", "data-list");
-  for (const site of data) list.append(node("li", "", site.name || "Permitted site"));
+  for (const site of data) {
+    const item = node("li");
+    item.append(node("strong", "", site.name || "Permitted site"));
+    const active = Array.isArray(site.alarms) ? site.alarms.filter((alarm) => alarm.status === "active") : [];
+    item.append(node("span", active.length ? "alarm-badge" : "", active.length
+      ? active.map((alarm) => alarm.label).join(", ")
+      : "No active alarms"));
+    list.append(item);
+  }
   parent.append(list);
 }
 
@@ -160,15 +164,14 @@ function renderReportTypes(data, parent) {
 
 function renderDocuments(data, parent) {
   if (!Array.isArray(data) || data.length === 0) return;
-  const list = node("div", "source-list");
+  const row = node("div", "source-chips");
+  row.append(node("span", "source-chips-label", "Source"));
   for (const document of data) {
-    const item = node("article", "source-item");
-    item.append(node("h3", "source-title", document.title || "Operations guidance"));
-    textParagraphs(item, document.excerpt, "source-excerpt");
-    addLink(item, "Read synthetic guide", document.url);
-    list.append(item);
+    const title = document.title || "Operations guidance";
+    if (approvedLink(document.url)) addLink(row, title, document.url);
+    else row.append(node("span", "source-link", title));
   }
-  parent.append(list);
+  parent.append(row);
 }
 
 function renderStatus(data, parent) {
@@ -179,12 +182,11 @@ function renderStatus(data, parent) {
 
 function renderEvidence(reply, parent) {
   const sources = Array.isArray(reply.sources) ? reply.sources : [];
-  if (sources.length === 0) return;
   for (const source of sources) {
     const content = node("div", "answer-data");
     switch (source.tool) {
       case "resolve_sites":
-        renderSites(source.data, content);
+        renderSites(source.data, content, reply.text);
         break;
       case "list_report_types":
         renderReportTypes(source.data, content);
@@ -200,14 +202,27 @@ function renderEvidence(reply, parent) {
     }
     if (content.childElementCount) parent.append(content);
   }
+}
 
-  const details = node("details", "evidence");
-  const count = sources.length;
-  details.append(node("summary", "", `${count} source${count === 1 ? "" : "s"} used`));
-  const list = node("div", "evidence-content");
-  for (const source of sources) list.append(node("p", "", TOOL_LABELS[source.tool] || "Verified tool result"));
-  details.append(list);
-  parent.append(details);
+function renderFollowUps(reply, parent) {
+  if ((reply.actions || []).length || !user || reply.status === "out_of_scope") return;
+  const tools = new Set((reply.sources || []).map((source) => source.tool));
+  const options = [];
+  if (tools.has("search_docs") || reply.status === "not_in_data") {
+    options.push(["Prepare support request", "ticket"]);
+  }
+  if (tools.has("search_docs") || tools.has("resolve_sites") || tools.has("list_report_types")) {
+    options.push(["Prepare a report", "report"]);
+  }
+  if (options.length === 0) return;
+  const row = node("div", "follow-ups");
+  for (const [label, kind] of options) {
+    const button = node("button", "follow-up", label);
+    button.type = "button";
+    button.addEventListener("click", () => openDraft(kind).catch(showError));
+    row.append(button);
+  }
+  parent.append(row);
 }
 
 function formatActionValue(key, value) {
@@ -287,6 +302,7 @@ function renderReply(reply) {
   textParagraphs(body, reply.text, "answer-text");
   renderEvidence(reply, body);
   for (const action of reply.actions || []) renderAction(action, body);
+  renderFollowUps(reply, body);
   article.append(body);
   $("messages").append(article);
   scrollToLatest();

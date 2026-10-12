@@ -25,6 +25,12 @@ class Document(BaseModel):
     url: str
 
 
+class Alarm(BaseModel):
+    id: str
+    label: str
+    status: str
+
+
 class ReportType(BaseModel):
     id: str
     label: str
@@ -41,6 +47,7 @@ class AlsenseSource(Protocol):
     def users_me(self, identity: str) -> User: ...
     def report_types(self, user: User) -> list[ReportType]: ...
     def search_docs(self, user: User, query: str) -> list[Document]: ...
+    def site_alarms(self, user: User, site_id: str) -> list[Alarm]: ...
     def alarm_exists(self, user: User, site_id: str, alarm_id: str) -> bool: ...
     def submit(self, user: User, kind: str, payload: dict, idempotency_key: str) -> dict: ...
 
@@ -82,9 +89,14 @@ class MockAlsenseSource:
         )]
         return documents[:1] if "offline" in query.lower() or "sensor" in query.lower() else documents
 
-    def alarm_exists(self, user: User, site_id: str, alarm_id: str) -> bool:
+    def site_alarms(self, user: User, site_id: str) -> list[Alarm]:
         allowed = {site.id for site in user.sites if site.tenant_id == user.tenant_id}
-        return site_id in allowed and alarm_id == f"alarm-{site_id}"
+        if site_id not in allowed:
+            return []
+        return [Alarm(id=f"alarm-{site_id}", label="Sensor offline", status="active")]
+
+    def alarm_exists(self, user: User, site_id: str, alarm_id: str) -> bool:
+        return any(alarm.id == alarm_id for alarm in self.site_alarms(user, site_id))
 
     def submit(self, user: User, kind: str, payload: dict, idempotency_key: str) -> dict:
         if payload["site_id"] not in {site.id for site in user.sites if site.tenant_id == user.tenant_id}:

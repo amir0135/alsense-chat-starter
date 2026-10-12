@@ -7,7 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .config import Settings
-from .tools import Context, evidence_text, model_definition, tool_definitions
+from .tools import Context, evidence_text, internal_identifiers, model_definition, tool_definitions
 
 log = logging.getLogger(__name__)
 
@@ -30,8 +30,14 @@ def guard(raw: str, ctx: Context) -> Reply:
         raise ValueError("Clarification requires a question.")
     if re.search(r"https?://|www\.", reply.text, re.IGNORECASE):
         raise ValueError("Links must come from approved structured tool results.")
+    for value in internal_identifiers(ctx):
+        if re.search(rf"(?<![\w-]){re.escape(value)}(?![\w-])", reply.text, re.IGNORECASE):
+            raise ValueError("Internal identifier in user-facing text.")
+    if re.search(r"\b(tenant|site|alarm|source)[_ ]ids?\b", reply.text, re.IGNORECASE):
+        raise ValueError("Ask in plain language, never for internal ids.")
     numbers = set(re.findall(r"\b\d+(?:[.,]\d+)?\b", evidence_text(ctx)))
-    if not set(re.findall(r"\b\d+(?:[.,]\d+)?\b", reply.text)) <= numbers:
+    prose = re.sub(r"(?m)^\s*\d+[.)]\s+", "", reply.text)
+    if not set(re.findall(r"\b\d+(?:[.,]\d+)?\b", prose)) <= numbers:
         raise ValueError("Number absent from tool evidence.")
     if ctx.actions and re.search(r"\b(submitted|sent|created successfully)\b", reply.text, re.IGNORECASE):
         raise ValueError("A draft has not been submitted.")
@@ -42,6 +48,28 @@ def envelope(reply: Reply, ctx: Context) -> dict:
     if reply.status in {"not_in_data", "out_of_scope"}:
         ctx.store.record_unanswered(ctx.session_id, reply.status)
     return {**reply.model_dump(), "sources": ctx.evidence, "actions": ctx.actions, "synthetic": True}
+
+
+def _names(items: list[str]) -> str:
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+
+
+def demo_text(name: str, data, ctx: Context) -> str:
+    sites = [site.name for site in ctx.user.sites if site.tenant_id == ctx.user.tenant_id]
+    if name == "resolve_sites":
+        alarms = [f"{alarm['label']} at {site['name']}" for site in data for alarm in site.get("alarms", [])]
+        text = f"You have access to {_names([site['name'] for site in data])}."
+        return text + (f" Active alarm: {_names(alarms)}." if alarms else "")
+    if name == "list_report_types":
+        return f"You can prepare {_names([item['label'] for item in data])} reports as PDF or CSV."
+    if name == "search_docs":
+        steps = [part.strip().rstrip(".") for doc in data for part in doc["excerpt"].split(". ") if part.strip()]
+        listed = "\n".join(f"{index}. {step}." for index, step in enumerate(steps[:4], 1))
+        target = sites[0] if len(sites) == 1 else "your site"
+        return f"Here is what to check:\n\n{listed}\n\nStill not working? I can prepare a support request for {target}."
+    if name.startswith("prepare_"):
+        return "Your draft is ready below. Nothing goes out until you review it and press Confirm."
+    return "Here is the latest status."
 
 
 def demo_run(message: str, ctx: Context) -> Iterator[tuple[str, dict]]:
@@ -90,12 +118,7 @@ def demo_run(message: str, ctx: Context) -> Iterator[tuple[str, dict]]:
         reply = Reply(status="not_in_data", text="The permitted data does not answer that lookup. "
                       "You can prepare a support ticket.", source_ids=[])
     else:
-        text = "See the returned evidence below."
-        if name.startswith("prepare_"):
-            text = "Draft prepared only. Review the form and press Submit to send it to the synthetic API."
-        if name == "search_docs":
-            text = " ".join(doc["excerpt"] for doc in output["data"])
-        reply = Reply(status="answer", text=text, source_ids=[output["source_id"]])
+        reply = Reply(status="answer", text=demo_text(name, output["data"], ctx), source_ids=[output["source_id"]])
     yield "reply", envelope(guard(reply.model_dump_json(), ctx), ctx)
 
 
@@ -156,6 +179,7 @@ class FoundryRunner:
                     items.extend(item.model_dump(exclude_none=True) for item in response.output)
                     items.append({"role": "user", "content": "Your reply failed validation. Return the required "
                                   "JSON, reference this turn's evidence, use no unsupported numbers or links, "
+                                  "never show internal ids, tenant ids or tool names (use display names), "
                                   "and never claim a draft was sent. Otherwise return not_in_data."})
                     continue
                 reply = Reply(status="not_in_data", text="I could not verify an answer from the tool evidence. "

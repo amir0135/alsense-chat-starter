@@ -153,14 +153,16 @@ input:hover, select:hover, textarea:hover { border-color: var(--muted); }
 .data-list li:last-child { border-bottom: 0; }
 .data-list strong { font-weight: 650; }
 .data-list span { margin-left: 7px; color: var(--muted); font-size: 13px; }
-.source-list { display: grid; gap: 8px; margin-top: 14px; }
-.source-item { padding: 11px 13px; border: 1px solid var(--soft-rule); border-radius: var(--radius); background: var(--paper); }
-.source-title { font-size: 13px; font-weight: 680; }
-.source-excerpt { margin-top: 4px; color: var(--muted); font-size: 13px; line-height: 1.5; }
-.source-link { display: inline-block; margin-top: 7px; color: var(--accent-hover); font-size: 12px; font-weight: 650; text-underline-offset: 3px; }
-.evidence { margin-top: 13px; }
-.evidence summary { width: fit-content; color: var(--muted); cursor: pointer; font-size: 12px; text-underline-offset: 3px; }
-.evidence-content { margin-top: 8px; padding: 11px 13px; border-radius: 3px; background: var(--ground); color: var(--muted); font-size: 12px; }
+.data-list .alarm-badge { padding: 2px 7px; border-radius: 999px; background: var(--warning-wash); color: var(--warning-ink); font-weight: 650; }
+.source-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 12px; font-size: 12px; }
+.source-chips-label { color: var(--muted); font-weight: 650; text-transform: uppercase; letter-spacing: .06em; font-size: 10px; }
+.source-link { color: var(--accent-hover); font-size: 12px; font-weight: 650; text-underline-offset: 3px; }
+.follow-ups { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.follow-up {
+  min-height: 34px; padding: 6px 12px; border: 1px solid var(--rule); border-radius: 999px;
+  background: var(--paper); color: var(--ink); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.follow-up:hover { border-color: var(--accent); background: var(--accent-wash); }
 .action-card { margin-top: 15px; padding: 15px; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--paper); }
 .action-card h3 { margin: 0; font-size: 14px; }
 .action-card > p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }

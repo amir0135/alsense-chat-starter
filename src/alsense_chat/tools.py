@@ -127,7 +127,10 @@ class Context:
     def dispatch(self, name: str, args: dict) -> Any:
         if name == "resolve_sites":
             query = args["query"].casefold()
-            return [site.model_dump() for site in self.user.sites
+            # Tenant ids stay server-side; alarms let the model prepare a ticket without asking for ids.
+            return [{"id": site.id, "name": site.name,
+                     "alarms": [alarm.model_dump() for alarm in self.source.site_alarms(self.user, site.id)]}
+                    for site in self.user.sites
                     if site.tenant_id == self.user.tenant_id and
                     (query == "*" or query in site.name.casefold() or query == site.id)]
         if name == "list_report_types":
@@ -157,6 +160,25 @@ def tool_definitions() -> list[dict]:
     # Pydantic emits executable constraints, not hand-maintained copies of them.
     return [{"type": "function", "name": name, "description": model["tools"][name]["description"],
              "parameters": schema.model_json_schema()} for name, schema in SCHEMAS.items()]
+
+
+def internal_identifiers(ctx: Context) -> set[str]:
+    """Values that are fine in tool arguments but must never appear in user-facing text."""
+    values = {ctx.user.tenant_id, *SCHEMAS}
+    for site in ctx.user.sites:
+        values.update({site.id, site.tenant_id})
+    for item in ctx.evidence:
+        values.add(item["source_id"])
+        data = item["data"] if isinstance(item["data"], list) else [item["data"]]
+        for record in data:
+            if not isinstance(record, dict):
+                continue
+            if item["tool"] != "get_report_status":
+                values.add(str(record.get("id", "")))
+            for alarm in record.get("alarms", []):
+                values.add(alarm["id"])
+    values.update(action["id"] for action in ctx.actions)
+    return {value for value in values if len(value) >= 3}
 
 
 def evidence_text(ctx: Context) -> str:

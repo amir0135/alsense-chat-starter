@@ -236,6 +236,39 @@ def test_reply_guard_blocks_inventions(tmp_path):
         guard(json.dumps({"status": "answer", "text": "Report submitted.", "source_ids": ["tool-2"]}), ctx)
 
 
+def test_reply_guard_keeps_internal_identifiers_out_of_text(tmp_path):
+    store = Store(str(tmp_path / "db.sqlite3"))
+    user = MockAlsenseSource().users_me("alice")
+    _, session_id = store.create_session(user, 3600)
+    ctx = Context(MockAlsenseSource(), store, session_id, user)
+    sites = ctx.execute("resolve_sites", {"query": "*"})
+    docs = ctx.execute("search_docs", {"query": "sensor offline"})
+    assert "tenant_id" not in json.dumps(sites)
+    assert sites["data"][0]["alarms"][0]["label"] == "Sensor offline"
+    for text in (
+        "You can access Demo North (id: site-a).",
+        "Demo North belongs to customer-a.",
+        "I found an alarm, alarm-site-a, at Demo North.",
+        "I used resolve_sites to check.",
+        "Which site id and alarm id should I use?",
+    ):
+        with pytest.raises(ValueError):
+            guard(json.dumps({"status": "answer", "text": text, "source_ids": [sites["source_id"]]}), ctx)
+    steps = "Here is what to check:\n\n1. Check power.\n2. Check connectivity.\n3. Review the alarm history report."
+    assert guard(json.dumps({"status": "answer", "text": steps, "source_ids": [docs["source_id"]]}), ctx)
+
+
+def test_demo_answers_are_concise_and_use_display_names(setup):
+    client, _, _ = setup
+    alice = login(client)
+    for question in ("Which sites can I access?", "My sensor is offline. What should I check?"):
+        reply = chat(client, alice, question)
+        assert reply["status"] == "answer"
+        assert "Demo North" in reply["text"]
+        assert not any(value in reply["text"] for value in ("site-a", "customer-a", "tool-", "alarm-site"))
+        assert len(reply["text"].split()) <= 80
+
+
 def test_foundry_backend_executes_tools_and_never_receives_credentials(tmp_path):
     store = Store(str(tmp_path / "db.sqlite3"))
     source = MockAlsenseSource()
