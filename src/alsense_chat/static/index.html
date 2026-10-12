@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Alsense reference chat</title>
+  <link rel="stylesheet" href="/widget.css">
+</head>
+<body>
+  <main>
+    <header><h1>Operations assistant</h1><p>Synthetic reference demo. No real Alsense calls.</p></header>
+    <section aria-label="Demo identity">
+      <label for="persona">Synthetic user</label>
+      <select id="persona"><option value="alice">Alice - Demo North</option><option value="bob">Bob - Demo South</option></select>
+      <label for="access-code">Demo access code (required for the Azure demo)</label>
+      <input id="access-code" type="password" autocomplete="off" maxlength="256">
+      <button id="login">Start demo session</button>
+      <span id="identity"></span>
+    </section>
+    <nav aria-label="Chat actions">
+      <button data-message="Which sites can I access?">Ask AI about my sites</button>
+      <button data-message="My sensor is offline. What should I check?">Ask AI for troubleshooting</button>
+      <button data-message="/sites *">My sites</button>
+      <button data-message="/reports">Report types</button>
+      <button data-message="/docs offline sensor">Troubleshooting</button>
+      <button id="report">Prepare report</button>
+      <button id="ticket">Prepare support ticket</button>
+    </nav>
+    <section id="messages" role="log" aria-live="polite" aria-label="Conversation"></section>
+    <form id="composer">
+      <label for="message">Message</label>
+      <textarea id="message" required maxlength="6000" placeholder="Ask about alarms, reports or offline sensors"></textarea>
+      <button id="send">Send</button>
+    </form>
+    <p id="error" role="alert"></p>
+  </main>
+  <dialog id="draft">
+    <form id="draft-form">
+      <h2 id="draft-title">Prepare a draft</h2>
+      <label>Site<select name="site_id" required></select></label>
+      <div id="report-fields">
+        <label>Report type<select name="report_type"></select></label>
+        <label>Format<select name="format"><option>pdf</option><option>csv</option></select></label>
+        <label>Start<input name="start" type="date"></label>
+        <label>End<input name="end" type="date"></label>
+      </div>
+      <div id="ticket-fields">
+        <label>Alarm ID<input name="alarm_id" maxlength="100"></label>
+        <p>Mock alarm ID: alarm-site-a for Demo North, alarm-site-b for Demo South.</p>
+        <label>Summary<textarea name="summary" maxlength="500"></textarea></label>
+        <label>Steps already tried<textarea name="steps_tried" maxlength="2000"></textarea></label>
+      </div>
+      <button type="button" id="cancel-draft">Cancel</button>
+      <button>Prepare for review (does not submit)</button>
+    </form>
+  </dialog>
+  <script src="/widget.js" defer></script>
+</body>
+</html>

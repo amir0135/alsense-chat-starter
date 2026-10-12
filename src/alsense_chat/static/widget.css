@@ -1,0 +1,19 @@
+:root { font-family: "Segoe UI", system-ui, sans-serif; color: #1f1f23; background: #eceef1; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 650px; margin: auto; padding: 20px; }
+h1 { font-size: 22px; margin-bottom: 6px; }
+header p { color: #5f606b; }
+nav, section, form { margin: 16px 0; }
+button, select, input, textarea { font: inherit; border: 1px solid #c9cad0; border-radius: 3px; padding: 8px; }
+button { cursor: pointer; background: white; margin: 4px 2px; }
+button:disabled { cursor: wait; opacity: .6; }
+textarea { display: block; width: 100%; min-height: 65px; resize: vertical; }
+label { display: block; margin: 12px 0 5px; }
+article { background: white; padding: 14px; border: 1px solid #dde2e8; border-radius: 3px; margin: 12px 0; }
+article p { white-space: pre-wrap; }
+pre { overflow: auto; white-space: pre-wrap; font-size: 14px; }
+#error { color: #c00615; }
+dialog { max-width: 540px; width: 95%; border: 1px solid #c9cad0; border-radius: 3px; }
+a { color: #c00615; overflow-wrap: anywhere; }
+:focus-visible { outline: 3px solid #ed071b; outline-offset: 2px; }
