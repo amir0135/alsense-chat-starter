@@ -53,7 +53,14 @@ def demo_run(message: str, ctx: Context) -> Iterator[tuple[str, dict]]:
     command, _, rest = message.partition(" ")
     name = commands.get(command.lower())
     if name is None:
-        if any(word in message.lower() for word in ("alarm", "report", "sensor", "offline")):
+        normalized = message.casefold()
+        if ("site" in normalized and any(word in normalized for word in
+                                         ("which", "access", "available", "list", "my sites"))):
+            name, args = "resolve_sites", {"query": "*"}
+        elif ("report" in normalized and any(word in normalized for word in
+                                             ("available", "types", "options", "list"))):
+            name, args = "list_report_types", {}
+        elif any(word in normalized for word in ("alarm", "report", "sensor", "offline")):
             name, args = "search_docs", {"query": message}
         else:
             reply = Reply(status="out_of_scope", text="This demo covers operations documentation, sites, "

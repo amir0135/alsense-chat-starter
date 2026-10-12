@@ -13,5 +13,6 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - run: uv run pytest
       - run: uv run ruff check src tests infra export.py
+      - run: node --check src/alsense_chat/static/widget.js
       - run: uv build
       - run: az bicep build --file infra/main.bicep --stdout > /dev/null

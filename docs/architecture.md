@@ -26,6 +26,8 @@ flowchart LR
 The widget receives an opaque demo token; the backend resolves its hash to an expiring session. The mock
 `users_me` is called once at session creation. The session stores only synthetic user identity and allowed sites,
 never the raw token. All authenticated endpoints enforce the backend feature flag and internal-user gate.
+The widget can request permitted report types and start a fresh conversation under the same authenticated
+synthetic identity; both endpoints require the existing bearer session.
 
 Tool arguments are validated against typed schemas. Sites are filtered by both tenant and allowed-site list.
 Support drafts also validate the alarm/site pair. Prepared actions belong to the session that created them.

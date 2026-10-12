@@ -3,57 +3,161 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Alsense reference chat</title>
+  <meta name="theme-color" content="#f1f3f5">
+  <title>Alsense Operations Assistant</title>
   <link rel="stylesheet" href="/widget.css">
 </head>
 <body>
-  <main>
-    <header><h1>Operations assistant</h1><p>Synthetic reference demo. No real Alsense calls.</p></header>
-    <section aria-label="Demo identity">
-      <label for="persona">Synthetic user</label>
-      <select id="persona"><option value="alice">Alice - Demo North</option><option value="bob">Bob - Demo South</option></select>
-      <label for="access-code">Demo access code (required for the Azure demo)</label>
-      <input id="access-code" type="password" autocomplete="off" maxlength="256">
-      <button id="login">Start demo session</button>
-      <span id="identity"></span>
-    </section>
-    <nav aria-label="Chat actions">
-      <button data-message="Which sites can I access?">Ask AI about my sites</button>
-      <button data-message="My sensor is offline. What should I check?">Ask AI for troubleshooting</button>
-      <button data-message="/sites *">My sites</button>
-      <button data-message="/reports">Report types</button>
-      <button data-message="/docs offline sensor">Troubleshooting</button>
-      <button id="report">Prepare report</button>
-      <button id="ticket">Prepare support ticket</button>
-    </nav>
-    <section id="messages" role="log" aria-live="polite" aria-label="Conversation"></section>
-    <form id="composer">
-      <label for="message">Message</label>
-      <textarea id="message" required maxlength="6000" placeholder="Ask about alarms, reports or offline sensors"></textarea>
-      <button id="send">Send</button>
-    </form>
-    <p id="error" role="alert"></p>
-  </main>
-  <dialog id="draft">
-    <form id="draft-form">
-      <h2 id="draft-title">Prepare a draft</h2>
-      <label>Site<select name="site_id" required></select></label>
-      <div id="report-fields">
-        <label>Report type<select name="report_type"></select></label>
-        <label>Format<select name="format"><option>pdf</option><option>csv</option></select></label>
-        <label>Start<input name="start" type="date"></label>
-        <label>End<input name="end" type="date"></label>
+  <!--
+  THESIS: A grounded operations conversation replaces the demo's button dashboard and raw JSON output.
+  OWN-WORLD: Bright work surfaces, cool-gray utility rail, precise dark type, and restrained signal-red actions.
+  STORY: Start a clearly synthetic session, ask in plain language, inspect readable evidence, then confirm drafts.
+  FIRST VIEWPORT: A compact identity rail sits beside one spacious conversation, with the composer anchored below.
+  FORM: Responsive operator workspace borrowing the POC's clarity without importing its identity or data.
+  -->
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Assistant workspace">
+      <div class="brand-lockup">
+        <span class="brand-mark" aria-hidden="true">A</span>
+        <span class="brand-copy"><strong>Alsense</strong><span>Operations assistant</span></span>
       </div>
-      <div id="ticket-fields">
-        <label>Alarm ID<input name="alarm_id" maxlength="100"></label>
-        <p>Mock alarm ID: alarm-site-a for Demo North, alarm-site-b for Demo South.</p>
-        <label>Summary<textarea name="summary" maxlength="500"></textarea></label>
-        <label>Steps already tried<textarea name="steps_tried" maxlength="2000"></textarea></label>
+
+      <button id="new-conversation" class="new-conversation" type="button" disabled>
+        <span aria-hidden="true">＋</span> New conversation
+      </button>
+
+      <section class="rail-section" aria-labelledby="tools-title">
+        <h2 id="tools-title" class="visually-hidden">Quick actions</h2>
+        <button class="rail-action" type="button" data-message="Which sites can I access?" disabled>
+          <span class="action-symbol" aria-hidden="true">⌖</span>
+          <span>My permitted sites</span>
+        </button>
+        <button class="rail-action" type="button" data-message="My sensor is offline. What should I check?" disabled>
+          <span class="action-symbol" aria-hidden="true">⌁</span>
+          <span>Troubleshoot an issue</span>
+        </button>
+        <button class="rail-action" type="button" id="open-report" disabled>
+          <span class="action-symbol" aria-hidden="true">▤</span>
+          <span>Prepare a report</span>
+        </button>
+        <button class="rail-action" type="button" id="open-ticket" disabled>
+          <span class="action-symbol" aria-hidden="true">↗</span>
+          <span>Contact support</span>
+        </button>
+      </section>
+
+      <section class="session-panel" aria-labelledby="session-title">
+        <div class="session-panel-heading">
+          <h2 id="session-title">Demo session</h2>
+          <span id="session-status" class="status-dot">Not started</span>
+        </div>
+        <label for="persona">Choose a synthetic user</label>
+        <select id="persona">
+          <option value="alice">Alice · Demo North</option>
+          <option value="bob">Bob · Demo South</option>
+        </select>
+        <div id="access-code-field">
+          <label for="access-code">Demo access code</label>
+          <div class="code-field">
+            <input id="access-code" type="password" autocomplete="off" maxlength="256"
+              aria-describedby="code-help">
+            <button id="toggle-code" class="code-toggle" type="button" aria-label="Show access code"
+              aria-pressed="false">Show</button>
+          </div>
+          <p id="code-help" class="field-help">Paste the full code, not the file path. Default file: <code>.azure/alsense-demo/demo-access-code</code> on the deployment computer.</p>
+        </div>
+        <p id="session-error" class="session-error" role="alert" hidden></p>
+        <button id="login" class="start-session" type="button">Start demo session</button>
+        <p id="identity" class="identity-summary" hidden></p>
+      </section>
+
+      <p class="synthetic-note"><span aria-hidden="true">●</span> Synthetic data only · No live Alsense calls</p>
+    </aside>
+
+    <main class="main-panel">
+      <header class="topbar">
+        <div>
+          <p class="page-title">Operations assistant</p>
+          <p class="page-subtitle">Ask about sites, troubleshooting, or reports</p>
+        </div>
+        <div class="topbar-state">
+          <span class="availability"><span aria-hidden="true"></span><span id="model-state">Demo ready</span></span>
+          <span id="active-user" class="active-user" hidden></span>
+        </div>
+      </header>
+
+      <section id="conversation" class="conversation" aria-label="Conversation">
+        <div id="welcome" class="welcome">
+          <div class="welcome-mark" aria-hidden="true">A</div>
+          <h1>How can I help with your operations?</h1>
+          <p>Ask a question in your own words. I’ll use synthetic site data and show the sources behind my answer.</p>
+          <div class="suggestions" aria-label="Try asking">
+            <button type="button" class="suggestion" data-message="Which sites can I access?" disabled>
+              <span class="suggestion-icon" aria-hidden="true">⌖</span>
+              <span><strong>Find my sites</strong><small>See which sites this session can access</small></span>
+              <span class="suggestion-arrow" aria-hidden="true">↗</span>
+            </button>
+            <button type="button" class="suggestion" data-message="My sensor is offline. What should I check?" disabled>
+              <span class="suggestion-icon" aria-hidden="true">⌁</span>
+              <span><strong>Troubleshoot an issue</strong><small>Get guidance for an offline sensor</small></span>
+              <span class="suggestion-arrow" aria-hidden="true">↗</span>
+            </button>
+            <button type="button" class="suggestion" data-message="/reports" disabled>
+              <span class="suggestion-icon" aria-hidden="true">▤</span>
+              <span><strong>Explore reports</strong><small>Check the available report types</small></span>
+              <span class="suggestion-arrow" aria-hidden="true">↗</span>
+            </button>
+            <button type="button" class="suggestion" id="suggest-report" disabled>
+              <span class="suggestion-icon" aria-hidden="true">＋</span>
+              <span><strong>Prepare a report</strong><small>Review the details before submitting</small></span>
+              <span class="suggestion-arrow" aria-hidden="true">↗</span>
+            </button>
+          </div>
+          <p id="welcome-hint" class="welcome-hint">Start a synthetic session in the left panel to begin.</p>
+        </div>
+        <div id="messages" class="message-list" role="log" aria-live="polite" aria-label="Chat messages"></div>
+      </section>
+
+      <div class="compose-area">
+        <section id="draft-panel" class="draft-panel" aria-labelledby="draft-title" hidden>
+          <div class="draft-heading">
+            <div><h2 id="draft-title">Prepare a report</h2><p id="draft-description">Review the details before anything is submitted.</p></div>
+            <button id="cancel-draft" class="icon-button" type="button" aria-label="Close form">×</button>
+          </div>
+          <form id="draft-form">
+            <label>Site<select name="site_id" required></select></label>
+            <div id="report-fields" class="draft-grid">
+              <label>Report type<select name="report_type" required></select></label>
+              <label>Format<select name="format" required><option value="pdf">PDF</option><option value="csv">CSV</option></select></label>
+              <label>From<input name="start" type="date" required></label>
+              <label>To<input name="end" type="date" required></label>
+            </div>
+            <div id="ticket-fields" class="draft-grid" hidden>
+              <label>Alarm ID<input name="alarm_id" maxlength="100" placeholder="For example, alarm-site-a" required></label>
+              <p class="field-help grid-span">Synthetic example: alarm-site-a for Demo North or alarm-site-b for Demo South.</p>
+              <label class="grid-span">What happened?<textarea name="summary" maxlength="500" required></textarea></label>
+              <label class="grid-span">What have you tried?<textarea name="steps_tried" maxlength="2000" required></textarea></label>
+            </div>
+            <div class="draft-actions">
+              <p>Preparing is not submitting. You’ll review a separate confirmation.</p>
+              <button class="start-session" type="submit">Prepare for review</button>
+            </div>
+          </form>
+        </section>
+
+        <form id="composer" class="composer">
+          <label class="visually-hidden" for="message">Your message</label>
+          <textarea id="message" rows="1" required maxlength="6000" placeholder="Ask about your sites, an alarm, or a report…" disabled></textarea>
+          <button id="send" class="send-button" type="submit" aria-label="Send message" disabled><span aria-hidden="true">↑</span></button>
+        </form>
+        <div class="composer-footer">
+          <p>AI can make mistakes. Check the cited synthetic sources.</p>
+          <p>Enter to send · Shift + Enter for a new line</p>
+        </div>
+        <p id="error" class="error-message" role="alert" hidden></p>
       </div>
-      <button type="button" id="cancel-draft">Cancel</button>
-      <button>Prepare for review (does not submit)</button>
-    </form>
-  </dialog>
+    </main>
+  </div>
   <script src="/widget.js" defer></script>
 </body>
 </html>

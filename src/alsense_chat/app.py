@@ -99,9 +99,18 @@ def create_app(settings: Settings | None = None, source: AlsenseSource | None = 
         token, session_id = app.state.store.create_session(user, settings.ttl_seconds)
         return {"token": token, "session_id": session_id, "user": user.model_dump()}
 
+    @app.post("/api/session/new")
+    def new_session(ctx: Annotated[Context, Depends(context)]):
+        token, session_id = app.state.store.create_session(ctx.user, settings.ttl_seconds)
+        return {"token": token, "session_id": session_id, "user": ctx.user.model_dump()}
+
     @app.get("/api/session")
     def session(ctx: Annotated[Context, Depends(context)]):
         return {"user": ctx.user.model_dump(), "history": ctx.store.history(ctx.session_id)}
+
+    @app.get("/api/report-types")
+    def report_types(ctx: Annotated[Context, Depends(context)]):
+        return [report_type.model_dump() for report_type in ctx.source.report_types(ctx.user)]
 
     @app.post("/api/chat")
     def chat(body: Chat, request: Request, ctx: Annotated[Context, Depends(context)]):

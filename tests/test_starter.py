@@ -86,6 +86,45 @@ def test_auth_required_and_users_me_once_per_session(setup):
     assert client.get("/api/session", headers={"Authorization": "Bearer fake"}).status_code == 401
 
 
+def test_report_types_require_a_session(setup):
+    client, _, _ = setup
+    assert client.get("/api/report-types").status_code == 401
+    headers = login(client)
+    assert [item["id"] for item in client.get("/api/report-types", headers=headers).json()] == [
+        "alarm-history", "site-status",
+    ]
+
+
+def test_new_conversation_starts_a_fresh_authenticated_session(setup):
+    client, _, _ = setup
+    assert client.post("/api/session/new").status_code == 401
+    headers = login(client)
+    chat(client, headers, "Which sites can I access?")
+    fresh = client.post("/api/session/new", headers=headers)
+    assert fresh.status_code == 200
+    new_headers = {"Authorization": "Bearer " + fresh.json()["token"]}
+    assert fresh.json()["user"]["id"] == "alice"
+    assert client.get("/api/session", headers=new_headers).json()["history"] == []
+
+
+def test_demo_mode_understands_common_suggested_questions(setup):
+    client, _, _ = setup
+    headers = login(client)
+
+    sites = chat(client, headers, "Which sites can I access?")
+    assert sites["status"] == "answer"
+    assert sites["sources"][0]["tool"] == "resolve_sites"
+    assert sites["sources"][0]["data"][0]["id"] == "site-a"
+
+    reports = chat(client, headers, "What report types are available?")
+    assert reports["status"] == "answer"
+    assert reports["sources"][0]["tool"] == "list_report_types"
+
+    guidance = chat(client, headers, "My sensor is offline. What should I check?")
+    assert guidance["status"] == "answer"
+    assert guidance["sources"][0]["tool"] == "search_docs"
+
+
 def test_site_and_tenant_isolation(setup):
     client, _, _ = setup
     alice, bob = login(client), login(client, "bob")
@@ -305,6 +344,8 @@ def test_export_excludes_credentials_databases_and_parent_repo(tmp_path):
     module.export(target)
     with ZipFile(target) as archive:
         names = archive.namelist()
+        assert "alsense-chat-starter/PRODUCT.md" in names
+        assert "alsense-chat-starter/DESIGN.md" in names
         assert "alsense-chat-starter/.env.example" in names
         assert "alsense-chat-starter/.github/workflows/tests.yml" in names
         assert all("demo-data" not in name and "/.git/" not in name and not name.endswith(".sqlite3") for name in names)
