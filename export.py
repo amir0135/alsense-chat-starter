@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parent
 FILES = [".gitignore", ".dockerignore", ".env.example", "README.md", "PRODUCT.md",
          "DESIGN.md", "pyproject.toml",
          "export.py", "Dockerfile", ".github/workflows/tests.yml",
-         "docs/architecture.md", "docs/integration.md", "docs/azure-demo.md",
+         "docs/architecture.md", "docs/architecture.drawio", "docs/integration.md", "docs/azure-demo.md",
          "infra/main.bicep", "infra/resources.bicep", "infra/deploy.sh", "infra/deploy.py"]
 
 

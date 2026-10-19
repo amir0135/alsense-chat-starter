@@ -21,6 +21,9 @@ flowchart LR
     B -. future .-> O[App Insights + evaluations]
 ```
 
+For a detailed, editable version with animated request flows, open [`architecture.drawio`](architecture.drawio)
+in draw.io.
+
 ## Local implementation
 
 The widget receives an opaque demo token; the backend resolves its hash to an expiring session. The mock
