@@ -10,6 +10,12 @@ let reportTypes = null;
 let replacingCard = null;
 let lastReply = null;
 let activeFlow = null;
+let lastFlowResult = null;
+let features = new Set(["reports", "troubleshooting", "support"]);
+let scenarios = [];
+let scenariosState = "loading";
+let activeScenario = null;
+let sessionScenario = "";
 const siteAlarms = new Map();
 const actionCards = new WeakMap();
 const DEFAULT_PLACEHOLDER = document.getElementById("message").placeholder;
@@ -19,6 +25,15 @@ const STATUS_LABELS = {
   clarification: "A question for you",
   not_in_data: "Not in the demo data",
   out_of_scope: "Outside this demo",
+  error: "Couldn’t complete",
+};
+/* Failures worth handing to a person: a support request can carry what was tried. */
+const SUPPORT_CATEGORIES = new Set(["unavailable", "timeout", "stale", "not_found"]);
+const REPORT_STATES = {
+  prepared: "Not submitted yet",
+  processing: "Still being prepared",
+  completed: "Ready (synthetic)",
+  failed: "Failed",
 };
 const TOOL_PROGRESS = {
   resolve_sites: "Checking the sites available in this session…",
@@ -139,13 +154,19 @@ function clearError() {
   $("error").hidden = true;
 }
 
+/* Server details are the backend's own user-safe wording, so they are shown when they explain more. */
 function friendlyRequestError(status, path, detail) {
-  if (status === 401 && path === "/api/demo/session") {
+  const scenarioStart = path.startsWith("/api/demo/scenarios/");
+  if (status === 401 && (path === "/api/demo/session" || scenarioStart)) {
     return "That access code didn’t match. Use Show to check the paste, then copy the full code from the deployment computer.";
   }
   if (status === 401) return "This demo session has expired. Start a new session to continue.";
-  if (status === 403) return "This demo session is unavailable. Check that the demo is enabled and try again.";
-  if (status === 404) return "That draft is no longer available in this session. Prepare it again.";
+  if (status === 403) return detail || "This demo session is unavailable. Check that the demo is enabled and try again.";
+  if (status === 404) {
+    return scenarioStart ? "That scenario isn’t available." : "That draft is no longer available in this session. Prepare it again.";
+  }
+  if (status === 409) return detail || "That scenario can’t run with this configuration.";
+  if ([501, 503, 504].includes(status) && detail) return detail;
   if (status >= 500) return "The assistant couldn’t complete that request. Please try again in a moment.";
   return detail || "The request couldn’t be completed. Please try again.";
 }
@@ -287,16 +308,18 @@ function renderDocuments(data, parent) {
 }
 
 function renderStatus(data, parent) {
-  const state = typeof data?.state === "string" ? data.state.replaceAll("_", " ") : "Status unavailable";
-  parent.append(node("p", "source-excerpt", `Report status: ${state}.`));
+  const state = typeof data?.state === "string" ? data.state : "";
+  parent.append(node("p", "source-excerpt", `Report status: ${REPORT_STATES[state] || "unavailable"}.`));
+  if (typeof data?.result?.message === "string") parent.append(node("p", "source-excerpt", data.result.message));
   if (data?.result?.url) addLink(parent, "Open synthetic report view", data.result.url);
 }
 
 function renderHealth(data, parent) {
-  if (!Array.isArray(data)) return;
+  const checks = Array.isArray(data?.checks) ? data.checks : null;
+  if (!checks) return;
   parent.append(node("p", "evidence-caption", "Health checks"));
   const list = node("ul", "data-list");
-  const open = data.filter((check) => check.status === "open");
+  const open = checks.filter((check) => check.status === "open");
   if (open.length === 0) list.append(node("li", "", "No open health checks"));
   for (const check of open) {
     const item = node("li");
@@ -337,10 +360,13 @@ function renderFollowUps(reply, parent) {
   if ((reply.actions || []).length || !user || reply.status === "out_of_scope") return;
   const tools = new Set((reply.sources || []).map((source) => source.tool));
   const options = [];
-  if (tools.has("search_docs") || reply.status === "not_in_data") {
+  const failed = reply.status === "error";
+  if (features.has("support") && (failed ? SUPPORT_CATEGORIES.has(reply.error?.category)
+    : tools.has("search_docs") || reply.status === "not_in_data")) {
     options.push(["Prepare support request", "ticket"]);
   }
-  if (tools.has("search_docs") || tools.has("resolve_sites") || tools.has("list_report_types")) {
+  if (!failed && features.has("reports")
+    && (tools.has("search_docs") || tools.has("resolve_sites") || tools.has("list_report_types"))) {
     options.push(["Prepare a report", "report"]);
   }
   if (options.length === 0) return;
@@ -432,7 +458,11 @@ function renderAction(action, parent) {
   };
   setState("prepared");
 
-  confirm.addEventListener("click", async () => {
+  const checkStatus = () => send(`/status ${action.id}`, "Check the status of this report");
+
+  /* Returns whether the synthetic submission succeeded; failures stay visible on the card. */
+  const confirmAction = async () => {
+    if (card.dataset.state !== "prepared" && card.dataset.state !== "failed") return false;
     setState("submitting");
     confirm.disabled = true;
     confirm.classList.add("is-busy");
@@ -459,11 +489,10 @@ function renderAction(action, parent) {
       if (kind === "report") {
         const status = node("button", "secondary-action", "Check status");
         status.type = "button";
-        status.addEventListener("click", () => {
-          send(`/status ${action.id}`, "Check the status of this report").catch((error) => showError(error.message));
-        });
+        status.addEventListener("click", () => checkStatus().catch((error) => showError(error.message)));
         buttons.append(status);
       }
+      return true;
     } catch (error) {
       setState("failed");
       state.textContent = error.message;
@@ -473,11 +502,16 @@ function renderAction(action, parent) {
       confirm.classList.remove("is-busy");
       confirm.textContent = copy.retry;
       edit.disabled = false;
+      return false;
     }
-  });
-  edit.addEventListener("click", () => {
-    openDraft(kind, payload).then(() => { replacingCard = card; }).catch((error) => showError(error.message));
-  });
+  };
+  const editAction = async () => {
+    await openDraft(kind, payload);
+    replacingCard = card;
+    return true;
+  };
+  confirm.addEventListener("click", confirmAction);
+  edit.addEventListener("click", () => editAction().catch((error) => showError(error.message)));
   actionCards.set(card, {
     replace() {
       if (card.dataset.state === "submitted" || card.dataset.state === "submitting") return;
@@ -487,6 +521,9 @@ function renderAction(action, parent) {
       state.textContent = "Replaced by your edited draft below. This one won’t be sent.";
       state.hidden = false;
     },
+    confirm: confirmAction,
+    edit: editAction,
+    status: checkStatus,
   });
   card.append(head, steps, details, buttons, state);
   parent.append(card);
@@ -508,14 +545,19 @@ function startFlow(id, label) {
 function answerFlow(flow, value, label, button) {
   if (busy) {
     showError("Wait for the current answer to finish.");
-    return;
+    return Promise.resolve(false);
   }
   if (button) {
     button.closest(".flow-options")?.querySelectorAll("button").forEach((item) => { item.disabled = true; });
     button.setAttribute("aria-pressed", "true");
+  } else {
+    /* Typed or scripted answers highlight the matching option, so the trail reads the same either way. */
+    const options = [...document.querySelectorAll(".flow-options")].pop();
+    const match = [...(options?.querySelectorAll("button") || [])].find((item) => item.dataset.value === value);
+    if (match) match.setAttribute("aria-pressed", "true");
   }
-  send(`/flow ${flow.id} ${JSON.stringify([...(flow.answers || []), value])}`, label)
-    .catch((error) => showError(error.message));
+  return send(`/flow ${flow.id} ${JSON.stringify([...(flow.answers || []), value])}`, label)
+    .catch((error) => { showError(error.message); return false; });
 }
 
 /* Only the newest step can be answered; the composer answers steps that ask for a site description. */
@@ -548,6 +590,7 @@ function renderFlowMenu(flow, parent) {
 }
 
 function renderFlowResult(flow, parent) {
+  lastFlowResult = flow;
   const ticket = flow.outcome === "ticket";
   const result = node("section", "flow-result");
   result.dataset.kind = ticket ? "ticket" : "resolve";
@@ -563,7 +606,7 @@ function renderFlowResult(flow, parent) {
     result.append(list);
   }
   const buttons = node("div", "action-buttons");
-  if (ticket) {
+  if (ticket && features.has("support")) {
     const support = node("button", "confirm-action", "Prepare support request");
     support.type = "button";
     support.addEventListener("click", () => {
@@ -600,10 +643,23 @@ function renderFlow(flow, parent) {
       button.append(glyph);
     }
     button.append(document.createTextNode(option.label));
+    button.dataset.value = option.value;
     button.addEventListener("click", () => answerFlow(flow, option.value, option.label, button));
     group.append(button);
   }
   parent.append(group);
+}
+
+/* User-safe evidence assembled by the backend: display names, versions and outcomes, never raw ids. */
+function renderWhy(reply, parent) {
+  const rows = Array.isArray(reply.why) ? reply.why.filter((row) => row?.label && row?.value) : [];
+  if (rows.length === 0) return;
+  const details = node("details", "why");
+  details.append(node("summary", "", "Why this result?"));
+  const list = node("dl", "why-list");
+  for (const row of rows) list.append(node("dt", "", row.label), node("dd", "", row.value));
+  details.append(list);
+  parent.append(details);
 }
 
 function renderReply(reply) {
@@ -627,6 +683,7 @@ function renderReply(reply) {
     for (const action of reply.actions || []) renderAction(action, body);
     renderFollowUps(reply, body);
   }
+  renderWhy(reply, body);
   article.append(body);
   $("messages").append(article);
   setActiveFlow(flow);
@@ -730,9 +787,14 @@ function updateSessionUI() {
   const active = Boolean(token && user);
   $("session-status").textContent = active ? "Active" : "Not started";
   $("session-status").classList.toggle("is-active", active);
-  $("identity").textContent = active ? `${user.name} · ${user.sites.map((site) => site.name).join(", ")}` : "";
+  /* Scenario sessions keep their synthetic faults, so say so wherever the identity is shown. */
+  const scenarioTitle = sessionScenario
+    ? scenarios.find((item) => item.id === sessionScenario)?.title || "Demo scenario" : "";
+  $("identity").textContent = active
+    ? `${user.name} · ${user.sites.map((site) => site.name).join(", ")}${scenarioTitle ? ` · Scenario: ${scenarioTitle}` : ""}`
+    : "";
   $("identity").hidden = !active;
-  $("active-user").textContent = active ? user.name : "";
+  $("active-user").textContent = active ? `${user.name}${sessionScenario ? " · scenario" : ""}` : "";
   $("active-user").hidden = !active;
   $("login").textContent = active ? "Switch user" : "Start demo session";
   $("persona").disabled = active;
@@ -744,9 +806,33 @@ function updateSessionUI() {
   $("open-report").disabled = !active || busy;
   $("open-ticket").disabled = !active || busy;
   document.querySelectorAll("[data-message], #suggest-report").forEach((button) => { button.disabled = !active || busy; });
+  document.querySelectorAll("[data-feature]").forEach((item) => { item.hidden = !features.has(item.dataset.feature); });
+  $("open-scenarios").disabled = busy;
+  $("welcome-scenarios").disabled = busy;
+  renderCoach();
   $("welcome-hint").textContent = active
     ? `Signed in as ${user.name}. Your questions stay scoped to ${user.sites.map((site) => site.name).join(", ")}.`
     : "Start a synthetic session in the left panel to begin.";
+}
+
+/* A fresh session always starts from a clean conversation. */
+function applySession(session) {
+  token = session.token;
+  user = session.user;
+  sessionScenario = session.scenario || "";
+  reportTypes = null;
+  replacingCard = null;
+  lastFlowResult = null;
+  siteAlarms.clear();
+  $("access-code").value = "";
+  $("messages").replaceChildren();
+  setActiveFlow(null);
+  $("draft-panel").hidden = true;
+  $("draft-form").reset();
+  closeScenarios();
+  $("welcome").hidden = false;
+  if ([...$("persona").options].some((option) => option.value === user.id)) $("persona").value = user.id;
+  updateSessionUI();
 }
 
 async function startSession() {
@@ -759,14 +845,8 @@ async function startSession() {
       persona: $("persona").value,
       access_code: $("access-code").value.trim(),
     })).json();
-    token = session.token;
-    user = session.user;
-    reportTypes = null;
-    siteAlarms.clear();
-    $("access-code").value = "";
-    $("welcome").hidden = false;
-    $("messages").replaceChildren();
-    updateSessionUI();
+    activeScenario = null;
+    applySession(session);
     $("message").focus();
   } catch (error) {
     $("session-error").textContent = error.message;
@@ -781,6 +861,9 @@ function switchUser() {
   if (busy) return;
   token = "";
   user = null;
+  activeScenario = null;
+  sessionScenario = "";
+  lastFlowResult = null;
   reportTypes = null;
   replacingCard = null;
   siteAlarms.clear();
@@ -800,16 +883,9 @@ async function newConversation() {
   clearError();
   try {
     const session = await (await api("/api/session/new", {})).json();
-    token = session.token;
-    user = session.user;
-    replacingCard = null;
-    siteAlarms.clear();
-    $("messages").replaceChildren();
-    setActiveFlow(null);
-    $("welcome").hidden = false;
-    $("draft-panel").hidden = true;
-    $("draft-form").reset();
-    updateSessionUI();
+    /* The backend keeps the scenario's setup, so its walkthrough restarts from the first step. */
+    if (activeScenario) activeScenario.index = 0;
+    applySession(session);
     $("message").focus();
   } catch (error) {
     showError(error.message);
@@ -935,7 +1011,7 @@ function closeDraft() {
   if (!$("message").disabled) $("message").focus();
 }
 
-async function openDraft(kind, prefill = null, { fromFlow = false } = {}) {
+async function openDraft(kind, prefill = null, { fromFlow = false, fresh = false } = {}) {
   if (!user) throw new Error("Start a synthetic demo session first.");
   if (busy) throw new Error("Wait for the current answer to finish.");
   clearError();
@@ -970,14 +1046,14 @@ async function openDraft(kind, prefill = null, { fromFlow = false } = {}) {
       form.elements.end.value = prefill.end;
     }
     applyPeriod(period);
-    $("draft-title").textContent = prefill ? "Edit report details" : "Prepare a report";
+    $("draft-title").textContent = prefill && !fresh ? "Edit report details" : "Prepare a report";
     $("draft-description").textContent = multipleSites
       ? "Choose the site, report, period and format for your draft."
       : "Choose the report, period and format for your draft.";
     $("draft-summary-icon").textContent = "▤";
     updateReportBuilder();
   } else {
-    $("draft-title").textContent = prefill && !fromFlow ? "Edit support request" : "Prepare a support request";
+    $("draft-title").textContent = prefill && !fromFlow && !fresh ? "Edit support request" : "Prepare a support request";
     $("draft-description").textContent = fromFlow
       ? "Filled in from your guided check. Review it before preparing."
       : "Describe the issue and what you’ve already tried.";
@@ -995,6 +1071,21 @@ async function openDraft(kind, prefill = null, { fromFlow = false } = {}) {
   scrollToLatest();
 }
 
+$("open-scenarios").addEventListener("click", () => openScenarios());
+$("welcome-scenarios").addEventListener("click", () => openScenarios());
+$("close-scenarios").addEventListener("click", closeScenarios);
+$("scenario-gallery").addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeScenarios();
+});
+$("coach-run").addEventListener("click", runCoachStep);
+$("coach-reset").addEventListener("click", () => {
+  if (activeScenario) launchScenario(activeScenario.scenario.id);
+});
+$("coach-exit").addEventListener("click", () => {
+  activeScenario = null;
+  renderCoach();
+  $("message").focus();
+});
 $("login").addEventListener("click", () => {
   if (token) switchUser();
   else startSession();
@@ -1064,19 +1155,20 @@ $("draft-form").addEventListener("change", (event) => {
 $("draft-form").addEventListener("input", (event) => {
   if (draftKind === "report" && (event.target.name === "start" || event.target.name === "end")) updateReportBuilder();
 });
-$("draft-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const form = event.currentTarget;
+/* Returns whether a draft was prepared. Builder problems stay inline and nothing is sent. */
+async function prepareDraft() {
+  const form = $("draft-form");
+  if ($("draft-panel").hidden) throw new Error("Open the report or support form first.");
   let payload;
   if (draftKind === "report") {
     payload = readReportPayload();
     updateReportBuilder();
     if (periodProblem(payload.start, payload.end) || !payload.report_type || !payload.format) {
       if (form.elements.period.value === "custom") form.elements.start.focus();
-      return;
+      return false;
     }
   } else {
-    if (!form.reportValidity()) return;
+    if (!form.reportValidity()) return false;
     payload = {
       site_id: form.elements.site_id.value,
       summary: form.elements.summary.value,
@@ -1099,13 +1191,237 @@ $("draft-form").addEventListener("submit", async (event) => {
       replacingCard = null;
       if (replaced && lastReply?.actions?.length) actionCards.get(replaced)?.replace();
     }
-  } catch (error) {
-    showError(error.message);
+    return completed;
   } finally {
     button.disabled = false;
     button.textContent = "Prepare for review";
   }
+}
+
+$("draft-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  prepareDraft().catch((error) => showError(error.message));
 });
+
+/* Demo scenarios: each starts a fresh synthetic session as the right user; the coach runs its steps. */
+const SCENARIO_GROUPS = [["journey", "Core journeys"], ["failure", "Failure cases"]];
+
+async function loadScenarios() {
+  try {
+    const response = await fetch("/api/scenarios");
+    if (!response.ok) throw new Error("unavailable");
+    scenarios = await response.json();
+    scenariosState = "ready";
+  } catch {
+    scenariosState = "error";
+    throw new Error("Demo scenarios couldn’t be loaded. Check that the demo service is running, then try again.");
+  }
+}
+
+async function loadPersonas() {
+  const response = await fetch("/api/demo/personas");
+  if (!response.ok) return;
+  const personas = await response.json();
+  if (!Array.isArray(personas) || personas.length === 0) return;
+  const select = $("persona");
+  const current = select.value;
+  select.replaceChildren(...personas.map((persona) => new Option(
+    `${String(persona.name).replace(/^Synthetic /, "")} · ${(persona.sites || []).join(", ")}`, persona.id)));
+  if (personas.some((persona) => persona.id === current)) select.value = current;
+}
+
+function scenarioRow(scenario) {
+  const running = Boolean(token && activeScenario?.scenario.id === scenario.id);
+  const row = node("li", "scenario-row");
+  row.dataset.state = scenario.unavailable_reason ? "unavailable" : running ? "running" : "ready";
+  const main = node("div", "scenario-main");
+  const title = node("h3", "", scenario.title);
+  if (running) title.append(node("span", "scenario-badge", "Running"));
+  main.append(title, node("p", "scenario-summary", scenario.demonstrates));
+  const sites = (scenario.persona_sites || []).join(", ");
+  const details = node("dl", "scenario-details");
+  for (const [label, value] of [
+    ["Starts as", sites ? `${scenario.persona_name} · ${sites}` : scenario.persona_name],
+    ["Expected", scenario.expected],
+  ]) details.append(node("dt", "", label), node("dd", "", value));
+  main.append(details);
+  for (const label of scenario.fault_labels || []) main.append(node("p", "scenario-fault", `Synthetic fault: ${label}`));
+  if (scenario.unavailable_reason) main.append(node("p", "scenario-unavailable", scenario.unavailable_reason));
+  const buttons = node("div", "scenario-actions");
+  const start = node("button", "start-session", "Start scenario");
+  start.type = "button";
+  start.disabled = Boolean(scenario.unavailable_reason) || busy;
+  start.addEventListener("click", () => launchScenario(scenario.id));
+  const reset = node("button", "secondary-action", "Reset scenario");
+  reset.type = "button";
+  reset.disabled = !running || busy;
+  reset.addEventListener("click", () => launchScenario(scenario.id));
+  buttons.append(start, reset);
+  row.append(main, buttons);
+  return row;
+}
+
+function renderScenarioGallery() {
+  const container = $("scenario-groups");
+  container.replaceChildren();
+  if (scenariosState === "loading") {
+    container.append(node("p", "gallery-state", "Loading demo scenarios…"));
+    return;
+  }
+  if (scenariosState === "error") return;
+  if (scenarios.length === 0) {
+    container.append(node("p", "gallery-state",
+      "No demo scenarios are configured. Add them to src/alsense_chat/scenarios.yaml, or point SCENARIOS_FILE at your own file."));
+    return;
+  }
+  for (const [group, title] of SCENARIO_GROUPS) {
+    const items = scenarios.filter((scenario) => scenario.group === group);
+    if (items.length === 0) continue;
+    const section = node("section", "scenario-group");
+    const heading = node("h2", "", title);
+    heading.id = `scenario-group-${group}`;
+    section.setAttribute("aria-labelledby", heading.id);
+    const list = node("ul", "scenario-list");
+    for (const scenario of items) list.append(scenarioRow(scenario));
+    section.append(heading, list);
+    container.append(section);
+  }
+}
+
+async function openScenarios() {
+  if (busy) return;
+  $("scenario-error").hidden = true;
+  $("welcome").hidden = true;
+  $("messages").hidden = true;
+  $("scenario-gallery").hidden = false;
+  renderScenarioGallery();
+  $("scenario-gallery-title").focus();
+  try {
+    await loadScenarios();
+    renderScenarioGallery();
+  } catch (error) {
+    $("scenario-error").textContent = error.message;
+    $("scenario-error").hidden = false;
+  }
+}
+
+function closeScenarios() {
+  if ($("scenario-gallery").hidden) return;
+  $("scenario-gallery").hidden = true;
+  $("messages").hidden = false;
+  $("welcome").hidden = $("messages").childElementCount > 0;
+}
+
+async function startScenario(id) {
+  const scenario = scenarios.find((item) => item.id === id);
+  if (!scenario) throw new Error("That scenario isn’t available.");
+  if (busy) throw new Error("Wait for the current answer to finish.");
+  const session = await (await api(`/api/demo/scenarios/${encodeURIComponent(id)}/start`, {
+    access_code: $("access-code").value.trim(),
+  })).json();
+  activeScenario = { scenario, index: 0, running: false };
+  applySession(session);
+  $("coach-run").focus();
+}
+
+function launchScenario(id) {
+  $("scenario-error").hidden = true;
+  startScenario(id).catch((error) => {
+    if ($("scenario-gallery").hidden) {
+      showError(error.message);
+      return;
+    }
+    $("scenario-error").textContent = error.message;
+    $("scenario-error").hidden = false;
+  });
+}
+
+function latestActionHandle() {
+  const cards = [...document.querySelectorAll("#messages .action-card")].filter((card) => card.dataset.state !== "replaced");
+  const card = cards.pop();
+  return card ? actionCards.get(card) : null;
+}
+
+function applyDraftChanges(changes) {
+  const form = $("draft-form");
+  if ($("draft-panel").hidden || draftKind !== "report") throw new Error("Open the report builder first.");
+  for (const [name, value] of Object.entries(changes)) {
+    const input = [...form.querySelectorAll(`input[name="${name}"]`)].find((item) => item.value === value && !item.disabled);
+    if (!input) throw new Error("The report builder doesn’t offer that choice.");
+    input.checked = true;
+    if (name === "period") applyPeriod(value);
+    if (name === "report_type") syncFormats();
+  }
+  updateReportBuilder({ animate: true });
+}
+
+/* Each step uses the same functions as the buttons a presenter would click. */
+async function runScenarioStep(step) {
+  if (step.say) return send(step.say, step.display || step.say);
+  if (step.answer) {
+    if (!activeFlow) throw new Error("There’s no guided-check question waiting. Reset the scenario to start again.");
+    return answerFlow(activeFlow, step.answer, step.label || step.answer);
+  }
+  if (step.open) {
+    await openDraft(step.open, step.prefill ? { ...step.prefill } : null, { fresh: true });
+    return true;
+  }
+  if (step.set) {
+    applyDraftChanges(step.set);
+    return true;
+  }
+  if (step.click === "prepare") return prepareDraft();
+  if (step.click === "support") {
+    if (!lastFlowResult?.ticket) throw new Error("No guided check has suggested a support request yet.");
+    await openDraft("ticket", lastFlowResult.ticket, { fromFlow: true });
+    return true;
+  }
+  const handle = latestActionHandle();
+  if (!handle) throw new Error("There’s no draft to use yet. Reset the scenario to start again.");
+  if (step.click === "confirm") return handle.confirm();
+  if (step.click === "edit") return handle.edit();
+  if (step.click === "status") return handle.status();
+  throw new Error("This scenario step isn’t supported.");
+}
+
+function renderCoach() {
+  const coach = $("scenario-coach");
+  if (!activeScenario || !token) {
+    coach.hidden = true;
+    return;
+  }
+  const { scenario, index, running } = activeScenario;
+  const total = scenario.steps.length;
+  const done = index >= total;
+  coach.hidden = false;
+  coach.dataset.state = done ? "done" : "running";
+  $("coach-title").textContent = scenario.title;
+  $("coach-progress").textContent = done ? "Complete." : `Step ${index + 1} of ${total}.`;
+  $("coach-note").textContent = done ? `Expected: ${scenario.expected}` : scenario.steps[index].note;
+  $("coach-run").hidden = done;
+  $("coach-run").disabled = busy || running;
+  $("coach-run").textContent = running ? "Running…" : "Run step";
+  $("coach-reset").disabled = busy || running;
+}
+
+async function runCoachStep() {
+  if (!activeScenario || activeScenario.running || busy) return;
+  const scenario = activeScenario;
+  const step = scenario.scenario.steps[scenario.index];
+  if (!step) return;
+  scenario.running = true;
+  clearError();
+  renderCoach();
+  try {
+    await runScenarioStep(step);
+    scenario.index += 1;
+  } catch (error) {
+    showError(error.message);
+  } finally {
+    scenario.running = false;
+    renderCoach();
+  }
+}
 
 fetch("/api/health")
   .then((response) => {
@@ -1114,13 +1430,21 @@ fetch("/api/health")
   })
   .then((health) => {
     cloudMode = Boolean(health.access_code_required);
+    features = new Set(Array.isArray(health.features) ? health.features : []);
+    $("demo-notice").textContent = health.data_source === "synthetic"
+      ? `${cloudMode ? "Hosted" : "Local"} reference demo. Uses synthetic data and does not connect to Alsense.`
+      : "Connected to the configured Alsense APIs.";
     $("access-code-field").hidden = !cloudMode;
     $("model-state").textContent = health.mode === "foundry" ? "AI assistant ready" : "Demo assistant ready";
     if (!cloudMode) $("code-help").textContent = "Local demo session · no access code needed.";
+    updateSessionUI();
   })
   .catch(() => {
     $("model-state").textContent = "Service unavailable";
     showError("The demo service couldn’t be reached. Start the service or check the hosted demo connection.");
   });
+
+loadPersonas().catch(() => {});
+loadScenarios().catch(() => {});
 
 updateSessionUI();

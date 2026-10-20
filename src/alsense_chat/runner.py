@@ -2,26 +2,35 @@ import json
 import logging
 import re
 from collections.abc import Iterator
-from typing import Literal
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from .adapters.errors import IntegrationError, ModelUnavailable
 from .config import Settings
+from .explain import explain
 from .flows import FlowError, match_trigger, menu_reply, run_flow
 from .tools import Context, evidence_text, internal_identifiers, model_definition, tool_definitions
 
 log = logging.getLogger(__name__)
 
+MODEL_STATUSES = ("answer", "clarification", "not_in_data", "out_of_scope")
+CHECKED = "Passed: sources, numbers, links and wording verified"
+SYSTEM = "Fixed system wording"
+
 
 class Reply(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    status: Literal["answer", "clarification", "not_in_data", "out_of_scope"]
+    # "error" is reserved for the backend: a model reply claiming it is rejected by guard().
+    status: Literal["answer", "clarification", "not_in_data", "out_of_scope", "error"]
     text: str = Field(min_length=1, max_length=6000)
     source_ids: list[str] = Field(max_length=20)
 
 
 def guard(raw: str, ctx: Context) -> Reply:
     reply = Reply.model_validate_json(raw)
+    if reply.status not in MODEL_STATUSES:
+        raise ValueError("Only the backend reports errors.")
     known = {item["source_id"] for item in ctx.evidence}
     if not set(reply.source_ids) <= known:
         raise ValueError("Unknown evidence reference.")
@@ -45,14 +54,55 @@ def guard(raw: str, ctx: Context) -> Reply:
     return reply
 
 
-def envelope(reply: Reply, ctx: Context) -> dict:
+def envelope(reply: Reply, ctx: Context, checks: str = CHECKED, error: dict | None = None) -> dict:
     if reply.status in {"not_in_data", "out_of_scope"}:
         ctx.store.record_unanswered(ctx.session_id, reply.status)
-    return {**reply.model_dump(), "sources": ctx.evidence, "actions": ctx.actions, "synthetic": True}
+    result = {
+        **reply.model_dump(),
+        "sources": ctx.evidence,
+        "actions": ctx.actions,
+        "synthetic": ctx.services.kind == "synthetic",
+        "why": explain(ctx, checks=checks),
+    }
+    if error:
+        result["error"] = error
+    return result
+
+
+def failure_reply(output: dict, ctx: Context) -> dict:
+    """Turn a categorized tool failure into a distinct, user-safe reply."""
+    category = output.get("category", "invalid_input")
+    if category == "invalid_input":
+        reply = Reply(
+            status="clarification", text=f"{output['error']} Can you correct that and try again?", source_ids=[]
+        )
+        return envelope(reply, ctx, SYSTEM)
+    if category == "disabled":
+        return envelope(Reply(status="out_of_scope", text=output["error"], source_ids=[]), ctx, SYSTEM)
+    reply = Reply(status="error", text=output["error"], source_ids=[])
+    return envelope(reply, ctx, SYSTEM, {"category": category, "service": output.get("service", "")})
+
+
+def error_reply(exc: IntegrationError, ctx: Context) -> dict:
+    ctx.store.record_unanswered(ctx.session_id, f"{exc.service}_{exc.category}")
+    reply = Reply(status="error", text=exc.user_message, source_ids=[])
+    return envelope(reply, ctx, SYSTEM, {"category": exc.category, "service": exc.service})
 
 
 def _names(items: list[str]) -> str:
     return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+
+
+REPORT_STATES = {
+    "prepared": "This report hasn't been submitted yet. Review the draft and press Confirm.",
+    "processing": "Your report is still being prepared. Check again in a moment.",
+    "completed": "Your synthetic report is ready.",
+    "failed": "The report job failed, so no report was produced. Prepare it again or contact support.",
+}
+EMPTY = {
+    "search_docs": "No approved guidance matches this issue. You can prepare a support request.",
+    "resolve_sites": "None of your permitted sites match that. Ask which sites you can access to see them all.",
+}
 
 
 def demo_text(name: str, data, ctx: Context) -> str:
@@ -70,6 +120,8 @@ def demo_text(name: str, data, ctx: Context) -> str:
         return f"Here is what to check:\n\n{listed}\n\nStill not working? I can prepare a support request for {target}."
     if name.startswith("prepare_"):
         return "Your draft is ready below. Nothing goes out until you review it and press Confirm."
+    if name == "get_report_status":
+        return REPORT_STATES[data["state"]]
     return "Here is the latest status."
 
 
@@ -92,24 +144,23 @@ def demo_run(message: str, ctx: Context) -> Iterator[tuple[str, dict]]:
         try:
             yield from run_flow(flow_id, json.loads(raw_answers) if raw_answers.strip() else [], ctx)
         except (json.JSONDecodeError, FlowError):
-            yield (
-                "reply",
-                envelope(
-                    Reply(
-                        status="clarification",
-                        text="That guided check couldn't continue. Can you start it again?",
-                        source_ids=[],
-                    ),
-                    ctx,
-                ),
+            reply = Reply(
+                status="clarification",
+                text="That guided check couldn't continue. Can you start it again?",
+                source_ids=[],
             )
+            yield "reply", envelope(reply, ctx, SYSTEM)
         return
-    name = commands.get(command.lower())
+    name: str | None = commands.get(command.lower())
+    args: dict[str, Any]
     if name is None:
-        flow_id = match_trigger(ctx.flows, message)
-        if flow_id:
-            yield from run_flow(flow_id, [], ctx)
+        triggered = match_trigger(ctx.flows, message) if "troubleshooting" in ctx.features else None
+        if triggered:
+            yield from run_flow(triggered, [], ctx)
             return
+        if "model_unavailable" in ctx.faults:
+            # The scripted router stands in for the model in demo mode, so it is what "goes down".
+            raise ModelUnavailable()
         normalized = message.casefold()
         if "site" in normalized and any(
             word in normalized for word in ("which", "access", "available", "list", "my sites")
@@ -122,11 +173,11 @@ def demo_run(message: str, ctx: Context) -> Iterator[tuple[str, dict]]:
         else:
             reply = Reply(
                 status="out_of_scope",
-                text="This demo covers operations documentation, sites, "
-                "reports and support drafts. Use the buttons or slash commands.",
+                text="This demo covers operations documentation, sites, reports and support drafts. "
+                "Use the buttons or slash commands.",
                 source_ids=[],
             )
-            yield "reply", envelope(reply, ctx)
+            yield "reply", envelope(reply, ctx, SYSTEM)
             return
     elif name == "list_report_types":
         args = {}
@@ -134,17 +185,12 @@ def demo_run(message: str, ctx: Context) -> Iterator[tuple[str, dict]]:
         try:
             args = json.loads(rest)
         except json.JSONDecodeError:
-            yield (
-                "reply",
-                envelope(
-                    Reply(
-                        status="clarification",
-                        text="Can you supply all form fields using the Report or Support button?",
-                        source_ids=[],
-                    ),
-                    ctx,
-                ),
+            reply = Reply(
+                status="clarification",
+                text="Can you supply all form fields using the Report or Support button?",
+                source_ids=[],
             )
+            yield "reply", envelope(reply, ctx, SYSTEM)
             return
     elif name == "get_report_status":
         args = {"action_id": rest.strip()}
@@ -154,17 +200,11 @@ def demo_run(message: str, ctx: Context) -> Iterator[tuple[str, dict]]:
     output = ctx.execute(name, args)
     yield "step", {"tool": name, "state": "failed" if "error" in output else "done"}
     if "error" in output:
-        reply = Reply(
-            status="clarification",
-            text="Can you check the required fields and choose a site from your permitted list?",
-            source_ids=[],
-        )
-    elif not output["data"]:
-        reply = Reply(
-            status="not_in_data",
-            text="The permitted data does not answer that lookup. You can prepare a support ticket.",
-            source_ids=[],
-        )
+        yield "reply", failure_reply(output, ctx)
+        return
+    if not output["data"]:
+        text = EMPTY.get(name, "The permitted data does not answer that lookup. You can prepare a support ticket.")
+        reply = Reply(status="not_in_data", text=text, source_ids=[])
     else:
         reply = Reply(status="answer", text=demo_text(name, output["data"], ctx), source_ids=[output["source_id"]])
     yield "reply", envelope(guard(reply.model_dump_json(), ctx), ctx)
@@ -185,9 +225,20 @@ class FoundryRunner:
         self.project.close()
         self.credential.close()
 
+    def create(self, **request: Any) -> Any:
+        try:
+            return self.client.responses.create(**request)
+        except Exception as exc:
+            # Never fall back to the scripted assistant: say the model is unavailable.
+            log.warning("Model call failed (%s)", type(exc).__name__)
+            raise ModelUnavailable() from exc
+
     def run(self, message: str, ctx: Context) -> Iterator[tuple[str, dict]]:
+        ctx.assistant = "model"
+        if "model_unavailable" in ctx.faults:
+            raise ModelUnavailable()
         history = ctx.store.history(ctx.session_id)
-        items = []
+        items: list[dict[str, Any]] = []
         for turn in history:
             items.extend(
                 [
@@ -200,13 +251,14 @@ class FoundryRunner:
             )
         items.append({"role": "user", "content": message})
         instructions = model_definition()["instructions"]
+        tools = tool_definitions(ctx.features)
         repaired = False
         for _ in range(12):
-            response = self.client.responses.create(
+            response = self.create(
                 model=self.deployment,
                 instructions=instructions,
-                input=items,
-                tools=tool_definitions(),
+                input=cast(Any, items),
+                tools=cast(Any, tools),
                 store=False,
                 max_output_tokens=3000,
             )
@@ -220,7 +272,7 @@ class FoundryRunner:
                     try:
                         args = json.loads(call.arguments)
                     except json.JSONDecodeError:
-                        output = {"error": "Invalid JSON arguments."}
+                        output = {"error": "Invalid JSON arguments.", "category": "invalid_input"}
                     else:
                         output = ctx.execute(call.name, args)
                     yield "step", {"tool": call.name, "state": "failed" if "error" in output else "done"}

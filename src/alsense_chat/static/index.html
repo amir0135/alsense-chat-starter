@@ -16,6 +16,11 @@
   FORM: Responsive operator workspace borrowing the POC's clarity without importing its identity or data.
   -->
   <div class="app-shell">
+    <div class="demo-banner" role="note">
+      <span class="banner-dot" aria-hidden="true"></span>
+      <span id="demo-notice">Local reference demo. Uses synthetic data and does not connect to Alsense.</span>
+      <a class="banner-link" href="/system">System status</a>
+    </div>
     <aside class="sidebar" aria-label="Assistant workspace">
       <div class="brand-lockup">
         <span class="brand-mark" aria-hidden="true">A</span>
@@ -32,17 +37,21 @@
           <span class="action-symbol" aria-hidden="true">⌖</span>
           <span>My permitted sites</span>
         </button>
-        <button class="rail-action" type="button" data-message="/flows" data-display="Troubleshoot an issue" disabled>
+        <button class="rail-action" type="button" data-message="/flows" data-display="Troubleshoot an issue" data-feature="troubleshooting" disabled>
           <span class="action-symbol" aria-hidden="true">⌁</span>
           <span>Troubleshoot an issue</span>
         </button>
-        <button class="rail-action" type="button" id="open-report" disabled>
+        <button class="rail-action" type="button" id="open-report" data-feature="reports" disabled>
           <span class="action-symbol" aria-hidden="true">▤</span>
           <span>Prepare a report</span>
         </button>
-        <button class="rail-action" type="button" id="open-ticket" disabled>
+        <button class="rail-action" type="button" id="open-ticket" data-feature="support" disabled>
           <span class="action-symbol" aria-hidden="true">↗</span>
           <span>Contact support</span>
+        </button>
+        <button class="rail-action" type="button" id="open-scenarios">
+          <span class="action-symbol" aria-hidden="true">▶</span>
+          <span>Demo scenarios</span>
         </button>
       </section>
 
@@ -55,6 +64,7 @@
         <select id="persona">
           <option value="alice">Alice · Demo North</option>
           <option value="bob">Bob · Demo South</option>
+          <option value="carol">Carol · Demo East Hall, Demo East Depot</option>
         </select>
         <div id="access-code-field">
           <label for="access-code">Demo access code</label>
@@ -71,7 +81,7 @@
         <p id="identity" class="identity-summary" hidden></p>
       </section>
 
-      <p class="synthetic-note"><span aria-hidden="true">●</span> Synthetic data only · No live Alsense calls</p>
+      <p class="synthetic-note"><span aria-hidden="true">●</span><span>Synthetic data only · No live Alsense calls · <a href="/system">System status</a></span></p>
     </aside>
 
     <main class="main-panel">
@@ -97,24 +107,36 @@
               <span><strong>Find my sites</strong><small>See which sites this session can access</small></span>
               <span class="suggestion-arrow" aria-hidden="true">↗</span>
             </button>
-            <button type="button" class="suggestion" data-message="/flows" data-display="Troubleshoot an issue" disabled>
+            <button type="button" class="suggestion" data-message="/flows" data-display="Troubleshoot an issue" data-feature="troubleshooting" disabled>
               <span class="suggestion-icon" aria-hidden="true">⌁</span>
               <span><strong>Troubleshoot an issue</strong><small>Step-by-step checks for common issues</small></span>
               <span class="suggestion-arrow" aria-hidden="true">↗</span>
             </button>
-            <button type="button" class="suggestion" data-message="/reports" data-display="Explore reports" disabled>
+            <button type="button" class="suggestion" data-message="/reports" data-display="Explore reports" data-feature="reports" disabled>
               <span class="suggestion-icon" aria-hidden="true">▤</span>
               <span><strong>Explore reports</strong><small>Check the available report types</small></span>
               <span class="suggestion-arrow" aria-hidden="true">↗</span>
             </button>
-            <button type="button" class="suggestion" id="suggest-report" disabled>
+            <button type="button" class="suggestion" id="suggest-report" data-feature="reports" disabled>
               <span class="suggestion-icon" aria-hidden="true">＋</span>
               <span><strong>Prepare a report</strong><small>Review the details before submitting</small></span>
               <span class="suggestion-arrow" aria-hidden="true">↗</span>
             </button>
           </div>
           <p id="welcome-hint" class="welcome-hint">Start a synthetic session in the left panel to begin.</p>
+          <p class="welcome-hint">Presenting? <button id="welcome-scenarios" class="link-button" type="button">Run a demo scenario</button> with the right user and expected result.</p>
         </div>
+        <section id="scenario-gallery" class="scenario-gallery" aria-labelledby="scenario-gallery-title" hidden>
+          <div class="gallery-heading">
+            <div>
+              <h1 id="scenario-gallery-title" tabindex="-1">Demo scenarios</h1>
+              <p>Repeatable walkthroughs. Each one starts a fresh synthetic session as the right user, and resetting starts it again from a clean conversation.</p>
+            </div>
+            <button id="close-scenarios" class="icon-button" type="button" aria-label="Close demo scenarios">×</button>
+          </div>
+          <p id="scenario-error" class="session-error" role="alert" hidden></p>
+          <div id="scenario-groups"></div>
+        </section>
         <div id="messages" class="message-list" role="log" aria-live="polite" aria-label="Chat messages"></div>
       </section>
 
@@ -182,6 +204,17 @@
           </form>
         </section>
 
+        <section id="scenario-coach" class="scenario-coach" aria-labelledby="coach-title" hidden>
+          <div class="coach-copy">
+            <h2 id="coach-title"></h2>
+            <p class="coach-note" aria-live="polite"><strong id="coach-progress"></strong> <span id="coach-note"></span></p>
+          </div>
+          <div class="coach-actions">
+            <button id="coach-run" class="start-session" type="button">Run step</button>
+            <button id="coach-reset" class="secondary-action" type="button">Reset scenario</button>
+            <button id="coach-exit" class="flow-cancel" type="button">End</button>
+          </div>
+        </section>
         <div id="flow-hint" class="flow-hint" hidden>
           <span>Type the company and site name below, or pick a site above.</span>
           <button id="flow-cancel" class="flow-cancel" type="button">Stop check</button>

@@ -4,16 +4,20 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from alsense_chat.adapters import synthetic
 from alsense_chat.app import create_app
 from alsense_chat.config import Settings
 from alsense_chat.flows import FlowError, load_flows, validate_flow
-from alsense_chat.source import MockAlsenseSource
 from alsense_chat.store import Store
 from alsense_chat.tools import Context, model_definition
 
 CUSTOM_FLOWS = """flows:
   custom-check:
     title: Custom check
+    version: "1.0.0"
+    status: draft
+    owner: Test operations
+    approved_for_demo: true
     triggers:
       - [dashboard, no data]
     start: ready
@@ -24,6 +28,7 @@ CUSTOM_FLOWS = """flows:
         no: done
       done:
         outcome: Finished.
+        kind: resolve
 """
 
 
@@ -154,11 +159,11 @@ def test_site_identification_stops_after_three_attempts_and_stays_in_tenant(clie
 
 
 def test_health_check_is_a_backend_only_flow_tool(tmp_path):
-    source = MockAlsenseSource()
-    ctx = Context(source, Store(str(tmp_path / "context.sqlite3")), "session", source.users_me("alice"))
+    source = synthetic.build()
+    ctx = Context(source, Store(str(tmp_path / "context.sqlite3")), "session", source.identity.users_me("alice"))
     assert "check_site_health" not in model_definition()["tools"]
-    assert ctx.execute("check_site_health", {"site_id": "site-a"}) == {"error": "Unknown tool."}
-    assert ctx.execute("check_site_health", {"site_id": "site-a"}, flow=True)["data"][0]["status"] == "open"
+    assert ctx.execute("check_site_health", {"site_id": "site-a"})["error"] == "Unknown tool."
+    assert ctx.execute("check_site_health", {"site_id": "site-a"}, flow=True)["data"]["checks"][0]["status"] == "open"
     assert "error" in ctx.execute("check_site_health", {"site_id": "site-b"}, flow=True)
 
 

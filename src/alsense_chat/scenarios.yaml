@@ -1,0 +1,222 @@
+# Synthetic demo scenarios for the reference starter. Every user, site and result is synthetic.
+#
+# Each scenario starts a fresh session as `persona`, optionally with synthetic `faults`, and lists the
+# presenter's steps. A step does exactly one thing:
+#   say:    send a chat message (display: the text shown in the conversation instead)
+#   answer: answer the current guided-check step (label: the text shown)
+#   open:   open the report or ticket builder (prefill: field values)
+#   click:  prepare | confirm | edit | status | support (open the support request a guided check prefilled)
+#   set:    change the open report builder (format, report_type, period)
+# Scenarios that use guided checks start them with /flow so they behave the same with or without an AI model.
+#
+# To demo customer flows, write a scenarios.local.yaml (ignored by Git and Docker) and set SCENARIOS_FILE.
+scenarios:
+  - id: alice-unreachable-site
+    title: "Alice: unreachable site"
+    group: journey
+    demonstrates: A guided check matches a misspelled site name against Alice's permitted sites, then a backend health check finds the gateway offline.
+    persona: alice
+    requires_flows: [site-connection]
+    requires_features: [troubleshooting]
+    expected: Demo North's primary gateway is offline, so Alice is told to check the site's network connection. No support request is needed.
+    steps:
+      - say: /flow site-connection []
+        display: Our site seems disconnected
+        note: Start the guided check. Every step comes from the decision tree, not from a model.
+      - answer: "no"
+        label: "No"
+        note: No readings arrived in the last hour.
+      - answer: demo nrth
+        note: Type a misspelled site name. It is matched only against Alice's permitted sites.
+      - answer: "yes"
+        label: "Yes"
+        note: Confirm the suggestion. The backend now checks the site's health with Alice's permissions.
+
+  - id: bob-support-request
+    title: "Bob: prepare a support request"
+    group: journey
+    demonstrates: When the tree ends in a ticket, the answered steps prefill a support request that Bob reviews and explicitly confirms.
+    persona: bob
+    requires_flows: [site-connection]
+    requires_features: [troubleshooting, support]
+    expected: Demo South has no open gateway checks, so the check suggests support. Bob confirms the prefilled request and the synthetic support service records it.
+    steps:
+      - say: /flow site-connection []
+        display: Our site seems disconnected
+        note: Start the same guided check as Bob.
+      - answer: "no"
+        label: "No"
+        note: No readings arrived in the last hour.
+      - answer: Demo South
+        note: Bob names his site exactly, so no confirmation is needed.
+      - click: support
+        note: Open the support request. The steps Bob answered are already filled in.
+      - click: prepare
+        note: Prepare it for review. Preparing is not submitting.
+      - click: confirm
+        note: Confirm. Only this explicit step calls the synthetic support service.
+
+  - id: report-lifecycle
+    title: "Report: prepare, edit, confirm, check status"
+    group: journey
+    demonstrates: The report builder validates inputs, a draft can be replaced before an explicit confirmation, and the job status is checked afterwards.
+    persona: alice
+    requires_features: [reports]
+    expected: An alarm history report for Demo North is confirmed as CSV, the PDF draft is marked replaced, and the status check says the synthetic report is ready.
+    steps:
+      - open: report
+        note: Open the report builder. The single permitted site is fixed.
+      - click: prepare
+        note: Prepare the default draft (alarm history, last 30 days, PDF).
+      - click: edit
+        note: Edit details reopens the builder with the draft's values.
+      - set:
+          format: csv
+        note: Switch the format to CSV.
+      - click: prepare
+        note: Prepare the replacement. The first draft is marked replaced and can no longer be sent.
+      - click: confirm
+        note: Confirm the CSV draft. Nothing was sent before this step.
+      - click: status
+        note: Check the report job status.
+
+  - id: ambiguous-site
+    title: "Failure: ambiguous site"
+    group: failure
+    demonstrates: Two of Carol's sites match her description, so the assistant asks which one she means instead of guessing.
+    persona: carol
+    requires_flows: [site-connection]
+    requires_features: [troubleshooting]
+    expected: The assistant offers Demo East Hall and Demo East Depot. Choosing Demo East Hall finds its secondary gateway offline.
+    steps:
+      - say: /flow site-connection []
+        display: Our site seems disconnected
+        note: Carol can access two sites with similar names.
+      - answer: "no"
+        label: "No"
+        note: No readings arrived in the last hour.
+      - answer: demo east
+        note: This matches both of Carol's sites equally well.
+      - answer: Demo East Hall
+        note: Choose one. The check continues with that site only.
+
+  - id: invalid-date-range
+    title: "Failure: invalid date range"
+    group: failure
+    demonstrates: Invalid report periods are caught twice, inline in the builder and again by the backend if a request bypasses the form.
+    persona: alice
+    requires_features: [reports]
+    expected: The builder flags the period and keeps Prepare disabled. The request that bypasses the form is refused because the start date is after the end date, and no draft is prepared.
+    steps:
+      - open: report
+        prefill:
+          report_type: alarm-history
+          format: pdf
+          start: "2026-02-10"
+          end: "2026-02-01"
+        note: The builder shows the problem next to the dates and disables Prepare.
+      - say: '/report {"site_id":"site-a","report_type":"alarm-history","format":"pdf","start":"2026-02-10","end":"2026-02-01"}'
+        display: Prepare an alarm history report from 10 Feb to 1 Feb 2026
+        note: Send the same request directly. The backend schema refuses it and prepares nothing.
+
+  - id: unavailable-service
+    title: "Failure: unavailable synthetic service"
+    group: failure
+    demonstrates: When a backend lookup fails, the guided check stops with an explicit message instead of guessing an answer.
+    persona: alice
+    faults: [health_unavailable]
+    requires_flows: [site-connection]
+    requires_features: [troubleshooting]
+    expected: The health-check service is reported as temporarily unavailable and a prefilled support request is offered. The check never claims the gateway is fine.
+    steps:
+      - say: /flow site-connection []
+        display: Our site seems disconnected
+        note: This session runs with the synthetic health-check service switched off.
+      - answer: "no"
+        label: "No"
+        note: No readings arrived in the last hour.
+      - answer: Demo North
+        note: The site is found, but its health lookup fails.
+
+  - id: support-unavailable
+    title: "Failure: support submission unavailable"
+    group: failure
+    demonstrates: A prepared request stays unsent when the support service is down, and the user is told exactly that.
+    persona: bob
+    faults: [support_unavailable]
+    requires_features: [support]
+    expected: Confirm fails with "Your request was prepared but not submitted." The draft stays available to retry.
+    steps:
+      - open: ticket
+        prefill:
+          summary: Site seems disconnected
+          steps_tried: Checked the power supply and the network cable.
+        note: Open a support request with a short description.
+      - click: prepare
+        note: Prepare it for review.
+      - click: confirm
+        note: The synthetic support service is down, so nothing is sent.
+
+  - id: report-failed
+    title: "Failure: report job failed"
+    group: failure
+    demonstrates: A confirmed report whose job fails is reported as failed, not as ready.
+    persona: alice
+    faults: [report_failed]
+    requires_features: [reports]
+    expected: The report is accepted, but the status check says the job failed and no report was produced.
+    steps:
+      - open: report
+        note: Open the report builder.
+      - click: prepare
+        note: Prepare the default draft.
+      - click: confirm
+        note: Confirm it. The synthetic report service accepts the job.
+      - click: status
+        note: The job status reports the failure.
+
+  - id: site-access-revoked
+    title: "Failure: access to the site revoked"
+    group: failure
+    demonstrates: An upstream 403 is shown as an access problem, not as a generic error or an empty result.
+    persona: alice
+    faults: [site_forbidden]
+    requires_flows: [site-connection]
+    requires_features: [troubleshooting]
+    expected: The check stops with "You do not have access to this site." and suggests asking an administrator.
+    steps:
+      - say: /flow site-connection []
+        display: Our site seems disconnected
+        note: The synthetic health-check service rejects this session's access to the site.
+      - answer: "no"
+        label: "No"
+        note: No readings arrived in the last hour.
+      - answer: Demo North
+        note: The site lookup is denied.
+
+  - id: no-approved-answer
+    title: "Failure: no approved answer"
+    group: failure
+    demonstrates: A question outside the approved guidance gets a clear "no approved answer" instead of invented advice.
+    persona: bob
+    expected: The assistant says no approved guidance matches the issue and offers a support request.
+    steps:
+      - say: /docs compressor calibration
+        display: How do I calibrate the compressor?
+        note: The synthetic guidance has nothing approved on this topic.
+
+  - id: model-unavailable
+    title: "Failure: AI assistant unavailable"
+    group: failure
+    demonstrates: If the assistant is down, free-text questions fail explicitly while guided checks keep working. Nothing silently switches to other answers.
+    persona: alice
+    faults: [model_unavailable]
+    requires_flows: [site-connection]
+    requires_features: [troubleshooting]
+    expected: The free-text question is answered with "The AI assistant is unavailable right now", and the guided check still starts.
+    steps:
+      - say: Which sites can I access?
+        note: A free-text question needs the assistant, which is switched off for this session.
+      - say: /flow site-connection []
+        display: Our site seems disconnected
+        note: Guided checks are deterministic and don't need the assistant.

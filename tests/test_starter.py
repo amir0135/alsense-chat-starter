@@ -5,35 +5,23 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from counting import CountingServices
 from fastapi.testclient import TestClient
 
+from alsense_chat.adapters import synthetic
+from alsense_chat.adapters.synthetic.services import SyntheticIdentity
 from alsense_chat.app import create_app
 from alsense_chat.config import Settings
 from alsense_chat.runner import FoundryRunner, guard
-from alsense_chat.source import MockAlsenseSource
 from alsense_chat.store import Store
 from alsense_chat.tools import Context, model_definition, safe_link, tool_definitions
 
 
-class CountingSource(MockAlsenseSource):
-    def __init__(self):
-        self.lookups = 0
-        self.submissions = 0
-
-    def users_me(self, identity):
-        self.lookups += 1
-        return super().users_me(identity)
-
-    def submit(self, *args):
-        self.submissions += 1
-        return super().submit(*args)
-
-
 @pytest.fixture
 def setup(tmp_path):
-    source = CountingSource()
+    source = CountingServices()
     settings = Settings(db=str(tmp_path / "sessions.sqlite3"))
-    with TestClient(create_app(settings, source)) as client:
+    with TestClient(create_app(settings, source.services)) as client:
         yield client, source, settings
 
 
@@ -139,7 +127,8 @@ def test_site_and_tenant_isolation(setup):
     assert "site-b" not in json.dumps(own)
     assert chat(client, alice, "/sites site-b")["status"] == "not_in_data"
     denied = chat(client, alice, "/report " + json.dumps(report("site-b")))
-    assert denied["status"] == "clarification"
+    assert (denied["status"], denied["error"]["category"]) == ("error", "forbidden")
+    assert denied["text"] == "That site isn't one of your permitted sites."
     assert denied["actions"] == []
     assert chat(client, bob, "/sites *")["sources"][0]["data"][0]["id"] == "site-b"
 
@@ -160,7 +149,8 @@ def test_explicit_confirmation_and_idempotent_submission(setup):
     assert first.json()["synthetic"] is True
     assert source.submissions == 1
     status = chat(client, headers, f"/status {action_id}")
-    assert status["sources"][0]["data"]["state"] == "submitted"
+    assert status["sources"][0]["data"]["state"] == "completed"
+    assert status["text"] == "Your synthetic report is ready."
 
 
 def test_ticket_alarm_authorization_and_prepare_only(setup):
@@ -180,7 +170,7 @@ def test_ticket_alarm_authorization_and_prepare_only(setup):
     action_id = draft["actions"][0]["id"]
     assert (
         client.post(f"/api/actions/{action_id}/submit", headers=headers, json={"confirmed": True}).json()["status"]
-        == "mock_received"
+        == "received"
     )
 
 
@@ -188,7 +178,7 @@ def test_sessions_and_drafts_survive_restart(setup):
     client, source, settings = setup
     headers = login(client)
     draft = chat(client, headers, "/report " + json.dumps(report()))
-    with TestClient(create_app(settings, source)) as restarted:
+    with TestClient(create_app(settings, source.services)) as restarted:
         history = restarted.get("/api/session", headers=headers).json()["history"]
         assert history[-1]["reply"]["actions"][0]["id"] == draft["actions"][0]["id"]
         assert (
@@ -243,9 +233,9 @@ def test_unapproved_links(url):
 
 def test_reply_guard_blocks_inventions(tmp_path):
     store = Store(str(tmp_path / "db.sqlite3"))
-    user = MockAlsenseSource().users_me("alice")
+    user = SyntheticIdentity().users_me("alice")
     _, session_id = store.create_session(user, 3600)
-    ctx = Context(MockAlsenseSource(), store, session_id, user)
+    ctx = Context(synthetic.build(), store, session_id, user)
     ctx.execute("resolve_sites", {"query": "*"})
     for reply in (
         {"status": "answer", "text": "There are 987 alarms.", "source_ids": ["tool-1"]},
@@ -261,9 +251,9 @@ def test_reply_guard_blocks_inventions(tmp_path):
 
 def test_reply_guard_keeps_internal_identifiers_out_of_text(tmp_path):
     store = Store(str(tmp_path / "db.sqlite3"))
-    user = MockAlsenseSource().users_me("alice")
+    user = SyntheticIdentity().users_me("alice")
     _, session_id = store.create_session(user, 3600)
-    ctx = Context(MockAlsenseSource(), store, session_id, user)
+    ctx = Context(synthetic.build(), store, session_id, user)
     sites = ctx.execute("resolve_sites", {"query": "*"})
     docs = ctx.execute("search_docs", {"query": "sensor offline"})
     assert "tenant_id" not in json.dumps(sites)
@@ -294,8 +284,8 @@ def test_demo_answers_are_concise_and_use_display_names(setup):
 
 def test_foundry_backend_executes_tools_and_never_receives_credentials(tmp_path):
     store = Store(str(tmp_path / "db.sqlite3"))
-    source = MockAlsenseSource()
-    user = source.users_me("alice")
+    source = synthetic.build()
+    user = source.identity.users_me("alice")
     token, session_id = store.create_session(user, 3600)
     ctx = Context(source, store, session_id, user)
     requests = []
@@ -344,9 +334,9 @@ def test_cloud_demo_requires_strong_code_and_validates_before_identity_lookup(tm
     with pytest.raises(ValueError, match="high-entropy"):
         Settings(cloud_demo=True).validate()
     code = "synthetic-code-with-at-least-32-characters"
-    source = CountingSource()
+    source = CountingServices()
     settings = Settings(cloud_demo=True, demo_access_code=code, db=str(tmp_path / "cloud.sqlite3"))
-    with TestClient(create_app(settings, source)) as client:
+    with TestClient(create_app(settings, source.services)) as client:
         for supplied in ("", "incorrect", "非ASCII"):
             response = client.post("/api/demo/session", json={"persona": "alice", "access_code": supplied})
             assert response.status_code == 401
@@ -414,7 +404,7 @@ def test_export_excludes_credentials_databases_and_parent_repo(tmp_path):
         assert "alsense-chat-starter/PRODUCT.md" in names
         assert "alsense-chat-starter/DESIGN.md" in names
         assert "alsense-chat-starter/.env.example" in names
-        assert "alsense-chat-starter/.github/workflows/tests.yml" in names
+        assert "alsense-chat-starter/.github/workflows/ci.yml" in names
         assert all("demo-data" not in name and "/.git/" not in name and not name.endswith(".sqlite3") for name in names)
         assert "alsense-chat-starter/.env" not in names
     with pytest.raises(FileExistsError):
