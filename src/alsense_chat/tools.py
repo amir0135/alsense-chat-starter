@@ -22,7 +22,8 @@ class Query(Arguments):
 
 class SitesQuery(Arguments):
     query: str = Field(
-        min_length=1, max_length=1000,
+        min_length=1,
+        max_length=1000,
         description='Use "*" to list every permitted site; otherwise a site name substring or exact site id.',
     )
 
@@ -59,8 +60,12 @@ class SiteRef(Arguments):
 
 
 SCHEMAS = {
-    "search_docs": Query, "list_report_types": Arguments, "resolve_sites": SitesQuery,
-    "prepare_report": Report, "get_report_status": Status, "prepare_support_ticket": Ticket,
+    "search_docs": Query,
+    "list_report_types": Arguments,
+    "resolve_sites": SitesQuery,
+    "prepare_report": Report,
+    "get_report_status": Status,
+    "prepare_support_ticket": Ticket,
 }
 # Backend-only lookups used by guided troubleshooting flows; never offered to the model.
 FLOW_TOOLS = {"check_site_health": SiteRef}
@@ -73,9 +78,11 @@ def model_definition() -> dict:
     for name, schema in SCHEMAS.items():
         declared = definition["tools"][name]["parameters"]
         generated = schema.model_json_schema()
-        if (set(declared["properties"]) != set(generated["properties"])
-                or set(declared["required"]) != set(generated.get("required", []))
-                or declared.get("additionalProperties") is not False):
+        if (
+            set(declared["properties"]) != set(generated["properties"])
+            or set(declared["required"]) != set(generated.get("required", []))
+            or declared.get("additionalProperties") is not False
+        ):
             raise ValueError(f"Semantic schema disagrees with handler: {name}")
     return definition
 
@@ -83,9 +90,14 @@ def model_definition() -> dict:
 def safe_link(value: str) -> bool:
     parts = urlsplit(value)
     # Mock links are deliberately same-origin. Configure approved origins in a real adapter.
-    return (value.startswith("/reference/") and not value.startswith("//")
-            and not parts.scheme and not parts.netloc and "\\" not in value
-            and all(ord(char) >= 32 for char in value))
+    return (
+        value.startswith("/reference/")
+        and not value.startswith("//")
+        and not parts.scheme
+        and not parts.netloc
+        and "\\" not in value
+        and all(ord(char) >= 32 for char in value)
+    )
 
 
 @dataclass
@@ -136,11 +148,16 @@ class Context:
         if name == "resolve_sites":
             query = args["query"].casefold()
             # Tenant ids stay server-side; alarms let the model prepare a ticket without asking for ids.
-            return [{"id": site.id, "name": site.name,
-                     "alarms": [alarm.model_dump() for alarm in self.source.site_alarms(self.user, site.id)]}
-                    for site in self.user.sites
-                    if site.tenant_id == self.user.tenant_id and
-                    (query == "*" or query in site.name.casefold() or query == site.id)]
+            return [
+                {
+                    "id": site.id,
+                    "name": site.name,
+                    "alarms": [alarm.model_dump() for alarm in self.source.site_alarms(self.user, site.id)],
+                }
+                for site in self.user.sites
+                if site.tenant_id == self.user.tenant_id
+                and (query == "*" or query in site.name.casefold() or query == site.id)
+            ]
         if name == "list_report_types":
             return [item.model_dump() for item in self.source.report_types(self.user)]
         if name == "check_site_health":
@@ -169,8 +186,15 @@ class Context:
 def tool_definitions() -> list[dict]:
     model = model_definition()
     # Pydantic emits executable constraints, not hand-maintained copies of them.
-    return [{"type": "function", "name": name, "description": model["tools"][name]["description"],
-             "parameters": schema.model_json_schema()} for name, schema in SCHEMAS.items()]
+    return [
+        {
+            "type": "function",
+            "name": name,
+            "description": model["tools"][name]["description"],
+            "parameters": schema.model_json_schema(),
+        }
+        for name, schema in SCHEMAS.items()
+    ]
 
 
 def internal_identifiers(ctx: Context) -> set[str]:

@@ -38,9 +38,7 @@ class Confirmation(BaseModel):
     confirmed: Literal[True]
 
 
-def context(
-    request: Request, credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)]
-) -> Context:
+def context(request: Request, credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)]) -> Context:
     state = request.app.state
     if not state.settings.enabled:
         raise HTTPException(403, "Chat is disabled by the backend feature flag.")
@@ -84,8 +82,13 @@ def create_app(settings: Settings | None = None, source: AlsenseSource | None = 
 
     @app.get("/api/health")
     def health():
-        return {"status": "ok", "mode": settings.agent_mode, "data_source": "synthetic",
-                "access_code_required": settings.cloud_demo, "production_ready": False}
+        return {
+            "status": "ok",
+            "mode": settings.agent_mode,
+            "data_source": "synthetic",
+            "access_code_required": settings.cloud_demo,
+            "production_ready": False,
+        }
 
     @app.post("/api/demo/session")
     def login(body: Login):
@@ -133,6 +136,7 @@ def create_app(settings: Settings | None = None, source: AlsenseSource | None = 
                 log.exception("Chat failed; no unverified answer released")
                 ctx.store.record_unanswered(ctx.session_id, "runtime_error")
                 yield 'event: error\ndata: {"message":"The run failed. Check the backend log and retry."}\n\n'
+
         return StreamingResponse(events(), media_type="text/event-stream", headers={"Cache-Control": "no-store"})
 
     @app.post("/api/actions/{action_id}/submit")
@@ -140,6 +144,7 @@ def create_app(settings: Settings | None = None, source: AlsenseSource | None = 
         def execute(action: dict):
             ctx.validate_action(action["kind"], action["payload"])
             return ctx.source.submit(ctx.user, action["kind"], action["payload"], action["id"])
+
         try:
             action = ctx.store.action(ctx.session_id, action_id)
             ctx.validate_action(action["kind"], action["payload"])

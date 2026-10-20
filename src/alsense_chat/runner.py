@@ -76,8 +76,12 @@ def demo_text(name: str, data, ctx: Context) -> str:
 def demo_run(message: str, ctx: Context) -> Iterator[tuple[str, dict]]:
     """Deterministic local harness, not an AI model. Slash commands exercise real tool handlers."""
     commands = {
-        "/sites": "resolve_sites", "/reports": "list_report_types", "/docs": "search_docs",
-        "/report": "prepare_report", "/ticket": "prepare_support_ticket", "/status": "get_report_status",
+        "/sites": "resolve_sites",
+        "/reports": "list_report_types",
+        "/docs": "search_docs",
+        "/report": "prepare_report",
+        "/ticket": "prepare_support_ticket",
+        "/status": "get_report_status",
     }
     command, _, rest = message.partition(" ")
     if command.lower() == "/flows":
@@ -88,8 +92,17 @@ def demo_run(message: str, ctx: Context) -> Iterator[tuple[str, dict]]:
         try:
             yield from run_flow(flow_id, json.loads(raw_answers) if raw_answers.strip() else [], ctx)
         except (json.JSONDecodeError, FlowError):
-            yield "reply", envelope(Reply(status="clarification", text="That guided check couldn't continue. "
-                                         "Can you start it again?", source_ids=[]), ctx)
+            yield (
+                "reply",
+                envelope(
+                    Reply(
+                        status="clarification",
+                        text="That guided check couldn't continue. Can you start it again?",
+                        source_ids=[],
+                    ),
+                    ctx,
+                ),
+            )
         return
     name = commands.get(command.lower())
     if name is None:
@@ -98,17 +111,21 @@ def demo_run(message: str, ctx: Context) -> Iterator[tuple[str, dict]]:
             yield from run_flow(flow_id, [], ctx)
             return
         normalized = message.casefold()
-        if ("site" in normalized and any(word in normalized for word in
-                                         ("which", "access", "available", "list", "my sites"))):
+        if "site" in normalized and any(
+            word in normalized for word in ("which", "access", "available", "list", "my sites")
+        ):
             name, args = "resolve_sites", {"query": "*"}
-        elif ("report" in normalized and any(word in normalized for word in
-                                             ("available", "types", "options", "list"))):
+        elif "report" in normalized and any(word in normalized for word in ("available", "types", "options", "list")):
             name, args = "list_report_types", {}
         elif any(word in normalized for word in ("alarm", "report", "sensor", "offline")):
             name, args = "search_docs", {"query": message}
         else:
-            reply = Reply(status="out_of_scope", text="This demo covers operations documentation, sites, "
-                          "reports and support drafts. Use the buttons or slash commands.", source_ids=[])
+            reply = Reply(
+                status="out_of_scope",
+                text="This demo covers operations documentation, sites, "
+                "reports and support drafts. Use the buttons or slash commands.",
+                source_ids=[],
+            )
             yield "reply", envelope(reply, ctx)
             return
     elif name == "list_report_types":
@@ -117,8 +134,17 @@ def demo_run(message: str, ctx: Context) -> Iterator[tuple[str, dict]]:
         try:
             args = json.loads(rest)
         except json.JSONDecodeError:
-            yield "reply", envelope(Reply(status="clarification", text="Can you supply all form fields "
-                                         "using the Report or Support button?", source_ids=[]), ctx)
+            yield (
+                "reply",
+                envelope(
+                    Reply(
+                        status="clarification",
+                        text="Can you supply all form fields using the Report or Support button?",
+                        source_ids=[],
+                    ),
+                    ctx,
+                ),
+            )
             return
     elif name == "get_report_status":
         args = {"action_id": rest.strip()}
@@ -128,11 +154,17 @@ def demo_run(message: str, ctx: Context) -> Iterator[tuple[str, dict]]:
     output = ctx.execute(name, args)
     yield "step", {"tool": name, "state": "failed" if "error" in output else "done"}
     if "error" in output:
-        reply = Reply(status="clarification", text="Can you check the required fields and choose a site "
-                      "from your permitted list?", source_ids=[])
+        reply = Reply(
+            status="clarification",
+            text="Can you check the required fields and choose a site from your permitted list?",
+            source_ids=[],
+        )
     elif not output["data"]:
-        reply = Reply(status="not_in_data", text="The permitted data does not answer that lookup. "
-                      "You can prepare a support ticket.", source_ids=[])
+        reply = Reply(
+            status="not_in_data",
+            text="The permitted data does not answer that lookup. You can prepare a support ticket.",
+            source_ids=[],
+        )
     else:
         reply = Reply(status="answer", text=demo_text(name, output["data"], ctx), source_ids=[output["source_id"]])
     yield "reply", envelope(guard(reply.model_dump_json(), ctx), ctx)
@@ -157,17 +189,26 @@ class FoundryRunner:
         history = ctx.store.history(ctx.session_id)
         items = []
         for turn in history:
-            items.extend([{"role": "user", "content": turn["question"]},
-                          {"role": "assistant", "content": json.dumps({
-                              key: turn["reply"][key] for key in ("status", "text", "source_ids")
-                          })}])
+            items.extend(
+                [
+                    {"role": "user", "content": turn["question"]},
+                    {
+                        "role": "assistant",
+                        "content": json.dumps({key: turn["reply"][key] for key in ("status", "text", "source_ids")}),
+                    },
+                ]
+            )
         items.append({"role": "user", "content": message})
         instructions = model_definition()["instructions"]
         repaired = False
         for _ in range(12):
             response = self.client.responses.create(
-                model=self.deployment, instructions=instructions, input=items,
-                tools=tool_definitions(), store=False, max_output_tokens=3000,
+                model=self.deployment,
+                instructions=instructions,
+                input=items,
+                tools=tool_definitions(),
+                store=False,
+                max_output_tokens=3000,
             )
             if response.status != "completed":
                 raise RuntimeError("Model response incomplete or blocked; no answer released.")
@@ -183,8 +224,9 @@ class FoundryRunner:
                     else:
                         output = ctx.execute(call.name, args)
                     yield "step", {"tool": call.name, "state": "failed" if "error" in output else "done"}
-                    items.append({"type": "function_call_output", "call_id": call.call_id,
-                                  "output": json.dumps(output)})
+                    items.append(
+                        {"type": "function_call_output", "call_id": call.call_id, "output": json.dumps(output)}
+                    )
                 continue
             try:
                 reply = guard(response.output_text, ctx)
@@ -193,13 +235,21 @@ class FoundryRunner:
                 if not repaired:
                     repaired = True
                     items.extend(item.model_dump(exclude_none=True) for item in response.output)
-                    items.append({"role": "user", "content": "Your reply failed validation. Return the required "
-                                  "JSON, reference this turn's evidence, use no unsupported numbers or links, "
-                                  "never show internal ids, tenant ids or tool names (use display names), "
-                                  "and never claim a draft was sent. Otherwise return not_in_data."})
+                    items.append(
+                        {
+                            "role": "user",
+                            "content": "Your reply failed validation. Return the required "
+                            "JSON, reference this turn's evidence, use no unsupported numbers or links, "
+                            "never show internal ids, tenant ids or tool names (use display names), "
+                            "and never claim a draft was sent. Otherwise return not_in_data.",
+                        }
+                    )
                     continue
-                reply = Reply(status="not_in_data", text="I could not verify an answer from the tool evidence. "
-                              "You can prepare a support ticket.", source_ids=[])
+                reply = Reply(
+                    status="not_in_data",
+                    text="I could not verify an answer from the tool evidence. You can prepare a support ticket.",
+                    source_ids=[],
+                )
             yield "reply", envelope(reply, ctx)
             return
         raise RuntimeError("Tool round limit reached; ask a narrower question.")

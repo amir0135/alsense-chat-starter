@@ -70,8 +70,13 @@ class MockAlsenseSource:
             "external": ("customer-a", "Synthetic Guest", False, "site-a", "Demo North"),
         }
         tenant, name, internal, site_id, site_name = personas[identity]
-        return User(id=identity, tenant_id=tenant, name=name, internal=internal,
-                    sites=[Site(id=site_id, name=site_name, tenant_id=tenant)])
+        return User(
+            id=identity,
+            tenant_id=tenant,
+            name=name,
+            internal=internal,
+            sites=[Site(id=site_id, name=site_name, tenant_id=tenant)],
+        )
 
     def report_types(self, user: User) -> list[ReportType]:
         return [
@@ -82,19 +87,22 @@ class MockAlsenseSource:
     def search_docs(self, user: User, query: str) -> list[Document]:
         if not any(term in query.lower() for term in ("alarm", "report", "offline", "sensor")):
             return []
-        documents = [Document(
-            id="doc-operations",
-            title="Synthetic alarm and report guide",
-            excerpt="For an offline sensor, check power and connectivity. Review the alarm history report. "
-                    "If the issue remains, prepare a support ticket with the steps already tried.",
-            url="/reference/operations",
-        ), Document(
-            id="doc-reports",
-            title="Synthetic report preparation guide",
-            excerpt="Choose a permitted site, report type, format and date range. Preparing a report does not "
-                    "submit it. Review the prepared form before using Submit.",
-            url="/reference/reports",
-        )]
+        documents = [
+            Document(
+                id="doc-operations",
+                title="Synthetic alarm and report guide",
+                excerpt="For an offline sensor, check power and connectivity. Review the alarm history report. "
+                "If the issue remains, prepare a support ticket with the steps already tried.",
+                url="/reference/operations",
+            ),
+            Document(
+                id="doc-reports",
+                title="Synthetic report preparation guide",
+                excerpt="Choose a permitted site, report type, format and date range. Preparing a report does not "
+                "submit it. Review the prepared form before using Submit.",
+                url="/reference/reports",
+            ),
+        ]
         return documents[:1] if "offline" in query.lower() or "sensor" in query.lower() else documents
 
     def site_alarms(self, user: User, site_id: str) -> list[Alarm]:
@@ -109,8 +117,14 @@ class MockAlsenseSource:
             return []
         # Synthetic: Demo North's gateway is unreachable, Demo South has no open health checks.
         if site_id == "site-a":
-            return [HealthCheck(id=f"hc-{site_id}-gateway", type="primary-gateway-offline",
-                                check="Primary Gateway Offline", status="open")]
+            return [
+                HealthCheck(
+                    id=f"hc-{site_id}-gateway",
+                    type="primary-gateway-offline",
+                    check="Primary Gateway Offline",
+                    status="open",
+                )
+            ]
         return []
 
     def alarm_exists(self, user: User, site_id: str, alarm_id: str) -> bool:

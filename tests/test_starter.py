@@ -55,8 +55,13 @@ def chat(client, headers, message):
 
 
 def report(site="site-a"):
-    return {"site_id": site, "report_type": "alarm-history", "format": "pdf",
-            "start": "2026-01-01", "end": "2026-01-31"}
+    return {
+        "site_id": site,
+        "report_type": "alarm-history",
+        "format": "pdf",
+        "start": "2026-01-01",
+        "end": "2026-01-31",
+    }
 
 
 def test_all_tools_are_declared_and_curated():
@@ -91,7 +96,8 @@ def test_report_types_require_a_session(setup):
     assert client.get("/api/report-types").status_code == 401
     headers = login(client)
     assert [item["id"] for item in client.get("/api/report-types", headers=headers).json()] == [
-        "alarm-history", "site-status",
+        "alarm-history",
+        "site-status",
     ]
 
 
@@ -160,16 +166,22 @@ def test_explicit_confirmation_and_idempotent_submission(setup):
 def test_ticket_alarm_authorization_and_prepare_only(setup):
     client, source, _ = setup
     headers = login(client)
-    payload = {"site_id": "site-a", "alarm_id": "alarm-site-b", "summary": "Offline",
-               "steps_tried": "Checked connectivity"}
+    payload = {
+        "site_id": "site-a",
+        "alarm_id": "alarm-site-b",
+        "summary": "Offline",
+        "steps_tried": "Checked connectivity",
+    }
     assert chat(client, headers, "/ticket " + json.dumps(payload))["actions"] == []
     payload["alarm_id"] = "alarm-site-a"
     draft = chat(client, headers, "/ticket " + json.dumps(payload))
     assert draft["actions"][0]["kind"] == "ticket"
     assert source.submissions == 0
     action_id = draft["actions"][0]["id"]
-    assert client.post(f"/api/actions/{action_id}/submit", headers=headers,
-                       json={"confirmed": True}).json()["status"] == "mock_received"
+    assert (
+        client.post(f"/api/actions/{action_id}/submit", headers=headers, json={"confirmed": True}).json()["status"]
+        == "mock_received"
+    )
 
 
 def test_sessions_and_drafts_survive_restart(setup):
@@ -179,8 +191,12 @@ def test_sessions_and_drafts_survive_restart(setup):
     with TestClient(create_app(settings, source)) as restarted:
         history = restarted.get("/api/session", headers=headers).json()["history"]
         assert history[-1]["reply"]["actions"][0]["id"] == draft["actions"][0]["id"]
-        assert restarted.post(f"/api/actions/{draft['actions'][0]['id']}/submit", headers=headers,
-                              json={"confirmed": True}).status_code == 200
+        assert (
+            restarted.post(
+                f"/api/actions/{draft['actions'][0]['id']}/submit", headers=headers, json={"confirmed": True}
+            ).status_code
+            == 200
+        )
 
 
 def test_expired_session(setup):
@@ -191,10 +207,17 @@ def test_expired_session(setup):
     assert client.get("/api/session", headers=headers).status_code == 401
 
 
-@pytest.mark.parametrize("changes", [
-    {"format": "exe"}, {"start": "yesterday"}, {"end": "2025-01-01"},
-    {"end": "2028-01-01"}, {"report_type": "other"}, {"url": "https://evil.example"},
-])
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"format": "exe"},
+        {"start": "yesterday"},
+        {"end": "2025-01-01"},
+        {"end": "2028-01-01"},
+        {"report_type": "other"},
+        {"url": "https://evil.example"},
+    ],
+)
 def test_bad_report_inputs_never_prepare(setup, changes):
     client, _, _ = setup
     assert chat(client, login(client), "/report " + json.dumps({**report(), **changes}))["actions"] == []
@@ -290,9 +313,17 @@ def test_foundry_backend_executes_tools_and_never_receives_credentials(tmp_path)
         requests.append(json.loads(json.dumps(kwargs)))
         if len(requests) == 1:
             return SimpleNamespace(status="completed", output=[Call()])
-        return SimpleNamespace(status="completed", output=[], output_text=json.dumps({
-            "status": "answer", "text": "Your permitted site is Demo North.", "source_ids": ["tool-1"],
-        }))
+        return SimpleNamespace(
+            status="completed",
+            output=[],
+            output_text=json.dumps(
+                {
+                    "status": "answer",
+                    "text": "Your permitted site is Demo North.",
+                    "source_ids": ["tool-1"],
+                }
+            ),
+        )
 
     runner = FoundryRunner.__new__(FoundryRunner)
     runner.deployment = "test"
@@ -331,8 +362,11 @@ def test_cloud_demo_requires_strong_code_and_validates_before_identity_lookup(tm
 
 def test_unknown_site_does_not_leak_other_tenant_in_support(setup):
     client, source, _ = setup
-    reply = chat(client, login(client), '/ticket {"site_id":"site-b","alarm_id":"alarm-site-b",'
-                 '"summary":"Offline","steps_tried":"Checked power"}')
+    reply = chat(
+        client,
+        login(client),
+        '/ticket {"site_id":"site-b","alarm_id":"alarm-site-b","summary":"Offline","steps_tried":"Checked power"}',
+    )
     assert reply["actions"] == []
     assert "Demo South" not in json.dumps(reply)
     assert source.submissions == 0

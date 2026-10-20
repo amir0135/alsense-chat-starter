@@ -107,16 +107,26 @@ def match_trigger(flows: dict, message: str) -> str | None:
 
 def _reply(status: str, text: str, ctx: Context, flow: dict, source_ids: list[str] | None = None) -> dict:
     # Flow text is authored by the content owner, not generated, so it skips the model reply guard.
-    return {"status": status, "text": text, "source_ids": list(source_ids or []), "sources": ctx.evidence,
-            "actions": [], "synthetic": True, "flow": flow}
+    return {
+        "status": status,
+        "text": text,
+        "source_ids": list(source_ids or []),
+        "sources": ctx.evidence,
+        "actions": [],
+        "synthetic": True,
+        "flow": flow,
+    }
 
 
 def menu_reply(ctx: Context) -> dict:
     if not ctx.flows:
-        return _reply("out_of_scope", "Guided checks aren't configured in this demo.", ctx,
-                      {"kind": "menu", "options": []})
-    options = [{"value": flow_id, "label": flow["title"], "description": flow.get("description", "")}
-               for flow_id, flow in ctx.flows.items()]
+        return _reply(
+            "out_of_scope", "Guided checks aren't configured in this demo.", ctx, {"kind": "menu", "options": []}
+        )
+    options = [
+        {"value": flow_id, "label": flow["title"], "description": flow.get("description", "")}
+        for flow_id, flow in ctx.flows.items()
+    ]
     return _reply("clarification", "What do you need help with?", ctx, {"kind": "menu", "options": options})
 
 
@@ -124,8 +134,11 @@ def run_flow(flow_id: str, answers: list, ctx: Context) -> Iterator[tuple[str, d
     flow = ctx.flows.get(flow_id)
     if flow is None:
         raise FlowError("Unknown guided check.")
-    if (not isinstance(answers, list) or len(answers) > MAX_ANSWERS
-            or not all(isinstance(answer, str) and len(answer) <= MAX_ANSWER_LENGTH for answer in answers)):
+    if (
+        not isinstance(answers, list)
+        or len(answers) > MAX_ANSWERS
+        or not all(isinstance(answer, str) and len(answer) <= MAX_ANSWER_LENGTH for answer in answers)
+    ):
         raise FlowError("Invalid answers.")
     yield from _Walk(flow_id, flow, answers, ctx).run()
 
@@ -151,8 +164,9 @@ def _closest_site(text: str, sites: list[dict]) -> dict | None:
         if folded in name:
             score = max(score, 0.75)
         for word in folded.split():
-            if len(word) >= 4 and any(difflib.SequenceMatcher(None, word, part).ratio() >= 0.8
-                                      for part in name.split()):
+            if len(word) >= 4 and any(
+                difflib.SequenceMatcher(None, word, part).ratio() >= 0.8 for part in name.split()
+            ):
                 score = max(score, 0.65)
         if score > best_score:
             best, best_score = site, score
@@ -175,12 +189,19 @@ class _Walk:
         return self.answers[self.used - 1].strip()
 
     def frame(self, kind: str, **extra) -> dict:
-        return {"id": self.flow_id, "title": self.flow["title"], "kind": kind, "step": self.used + 1,
-                "answers": self.answers[: self.used], **extra}
+        return {
+            "id": self.flow_id,
+            "title": self.flow["title"],
+            "kind": kind,
+            "step": self.used + 1,
+            "answers": self.answers[: self.used],
+            **extra,
+        }
 
     def prompt(self, text: str, kind: str, options: list[dict], free_text: bool = False) -> dict:
-        return _reply("clarification", text, self.ctx, self.frame(kind, options=options, free_text=free_text),
-                      self.source_ids)
+        return _reply(
+            "clarification", text, self.ctx, self.frame(kind, options=options, free_text=free_text), self.source_ids
+        )
 
     def single_site(self) -> dict | None:
         sites = [site for site in self.ctx.user.sites if site.tenant_id == self.ctx.user.tenant_id]
@@ -235,8 +256,10 @@ class _Walk:
             if site is None and (guess := _closest_site(text, sites)) is not None:
                 confirmation = self.next_answer()
                 if confirmation is None:
-                    yield "reply", self.prompt(node.get("confirm", DEFAULT_CONFIRM).format(site=guess["name"]),
-                                               "confirm", YES_NO)
+                    yield (
+                        "reply",
+                        self.prompt(node.get("confirm", DEFAULT_CONFIRM).format(site=guess["name"]), "confirm", YES_NO),
+                    )
                     return PENDING
                 site = guess if _yes_no(confirmation) == "yes" else None
             if site is not None:
@@ -258,8 +281,9 @@ class _Walk:
             return False
         self.source_ids.append(output["source_id"])
         wanted = set(node["any_open"])
-        found = [item["check"] for item in output["data"]
-                 if item.get("status") == "open" and item.get("type") in wanted]
+        found = [
+            item["check"] for item in output["data"] if item.get("status") == "open" and item.get("type") in wanted
+        ]
         self.trail.append({"label": label, "answer": ", ".join(found) if found else "None open"})
         return bool(found)
 

@@ -59,17 +59,40 @@ def test_sample_flows_load_and_the_menu_lists_them(client):
     assert [option["value"] for option in menu["flow"]["options"]] == list(flows) == ["site-connection"]
 
 
-@pytest.mark.parametrize("broken, problem", [
-    ({"title": "x", "start": "a", "nodes": {"a": {"ask": "Q?", "yes": "b", "no": "a"}}}, "must name a node"),
-    ({"title": "x", "start": "a", "nodes": {"a": {"ask": "Q?", "outcome": "Done", "yes": "a", "no": "a"}}},
-     "exactly one"),
-    ({"title": "x", "start": "a", "nodes": {"a": {"check": "database", "any_open": ["x"], "yes": "b", "no": "b"},
-                                            "b": {"outcome": "Done"}}}, "check must be"),
-    ({"title": "x", "start": "a", "nodes": {"a": {"ask": "Q?", "yes": "b", "no": "b"},
-                                            "b": {"ask": "Again?", "yes": "a", "no": "c"}, "c": {"outcome": "Done"}}},
-     "loops back"),
-    ({"title": "x", "start": "a", "nodes": {"a": {"outcome": "Done", "kind": "email"}}}, "resolve or ticket"),
-])
+@pytest.mark.parametrize(
+    "broken, problem",
+    [
+        ({"title": "x", "start": "a", "nodes": {"a": {"ask": "Q?", "yes": "b", "no": "a"}}}, "must name a node"),
+        (
+            {"title": "x", "start": "a", "nodes": {"a": {"ask": "Q?", "outcome": "Done", "yes": "a", "no": "a"}}},
+            "exactly one",
+        ),
+        (
+            {
+                "title": "x",
+                "start": "a",
+                "nodes": {
+                    "a": {"check": "database", "any_open": ["x"], "yes": "b", "no": "b"},
+                    "b": {"outcome": "Done"},
+                },
+            },
+            "check must be",
+        ),
+        (
+            {
+                "title": "x",
+                "start": "a",
+                "nodes": {
+                    "a": {"ask": "Q?", "yes": "b", "no": "b"},
+                    "b": {"ask": "Again?", "yes": "a", "no": "c"},
+                    "c": {"outcome": "Done"},
+                },
+            },
+            "loops back",
+        ),
+        ({"title": "x", "start": "a", "nodes": {"a": {"outcome": "Done", "kind": "email"}}}, "resolve or ticket"),
+    ],
+)
 def test_invalid_flows_fail_when_loaded(broken, problem):
     with pytest.raises(FlowError, match=problem):
         validate_flow("broken", broken)
