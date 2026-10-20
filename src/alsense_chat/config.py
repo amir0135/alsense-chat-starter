@@ -17,12 +17,15 @@ class Settings:
     cloud_demo: bool = False
     demo_access_code: str = ""
     telemetry_connection: str = ""
+    flows_file: str = ""
 
     def validate(self) -> None:
         if not self.demo_login:
             raise ValueError("Real sign-in is not wired. Supply a trusted authentication provider before deployment.")
         if self.agent_mode not in {"demo", "foundry"}:
             raise ValueError("AGENT_MODE must be demo or foundry.")
+        if self.flows_file and not Path(self.flows_file).is_file():
+            raise ValueError("FLOWS_FILE must point to an existing troubleshooting flows YAML file.")
         if self.ttl_seconds < 60:
             raise ValueError("SESSION_TTL_SECONDS must be at least 60.")
         if self.agent_mode == "foundry" and not (self.foundry_endpoint and self.deployment):
@@ -49,6 +52,7 @@ def load_settings() -> Settings:
         cloud_demo=flag("CLOUD_DEMO", "false"),
         demo_access_code=os.environ.get("DEMO_ACCESS_CODE", ""),
         telemetry_connection=os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING", ""),
+        flows_file=os.environ.get("FLOWS_FILE", ""),
     )
     settings.validate()
     return settings

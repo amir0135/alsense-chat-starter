@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .config import Settings
+from .flows import FlowError, match_trigger, menu_reply, run_flow
 from .tools import Context, evidence_text, internal_identifiers, model_definition, tool_definitions
 
 log = logging.getLogger(__name__)
@@ -79,8 +80,23 @@ def demo_run(message: str, ctx: Context) -> Iterator[tuple[str, dict]]:
         "/report": "prepare_report", "/ticket": "prepare_support_ticket", "/status": "get_report_status",
     }
     command, _, rest = message.partition(" ")
+    if command.lower() == "/flows":
+        yield "reply", menu_reply(ctx)
+        return
+    if command.lower() == "/flow":
+        flow_id, _, raw_answers = rest.strip().partition(" ")
+        try:
+            yield from run_flow(flow_id, json.loads(raw_answers) if raw_answers.strip() else [], ctx)
+        except (json.JSONDecodeError, FlowError):
+            yield "reply", envelope(Reply(status="clarification", text="That guided check couldn't continue. "
+                                         "Can you start it again?", source_ids=[]), ctx)
+        return
     name = commands.get(command.lower())
     if name is None:
+        flow_id = match_trigger(ctx.flows, message)
+        if flow_id:
+            yield from run_flow(flow_id, [], ctx)
+            return
         normalized = message.casefold()
         if ("site" in normalized and any(word in normalized for word in
                                          ("which", "access", "available", "list", "my sites"))):

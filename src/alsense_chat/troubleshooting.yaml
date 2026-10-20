@@ -1,0 +1,47 @@
+# Synthetic guided troubleshooting flows for the reference starter.
+# Operations teams own real flows. Load customer-provided flows from a local file with FLOWS_FILE and keep
+# them out of this repository, its exports and container images.
+#
+# Node types (exactly one per node):
+#   ask:           yes/no question for the user              -> yes / no
+#   identify_site: match the user's description to a permitted site, with "Do you mean ...?"
+#                  suggestions and a limited number of attempts -> found / not_found
+#   check:         backend lookup with the user's permissions -> yes / no
+#   outcome:       final guidance; kind is resolve (user action) or ticket (prepare a support request)
+flows:
+  site-connection:
+    title: Site seems disconnected
+    description: Check whether a site can reach the platform before asking support.
+    triggers:
+      - [site, disconnected]
+      - [site, unreachable]
+    start: recent-readings
+    nodes:
+      recent-readings:
+        ask: Do you see readings from the site in the last hour?
+        short: Recent readings visible
+        yes: data-arriving
+        no: identify
+      data-arriving:
+        outcome: The site is still sending data, so its connection looks fine. If something else looks wrong, prepare a support request.
+        kind: ticket
+      identify:
+        identify_site: Which site is this about?
+        attempts: 3
+        found: gateway
+        not_found: unknown-site
+      unknown-site:
+        outcome: Sorry, I couldn't identify the site. Please prepare a support request.
+        kind: ticket
+      gateway:
+        check: site_health
+        any_open: [primary-gateway-offline, secondary-gateway-offline]
+        short: Open gateway offline health check
+        yes: unreachable
+        no: investigate
+      unreachable:
+        outcome: The site's gateway is offline, so the site can't reach the platform. Check the site's network connection.
+        kind: resolve
+      investigate:
+        outcome: The gateway looks online, so this needs a closer look. Please prepare a support request.
+        kind: ticket

@@ -41,6 +41,10 @@ The default runner is deterministic. Optional Foundry mode uses the Responses AP
 (`store=false`) and a bounded local history. The backend retains the conversation, runs function calls, and
 validates the final structured reply. It makes one repair attempt and then abstains.
 
+Guided troubleshooting flows are a separate deterministic path in both modes. The backend walks an
+operations-owned decision tree, identifies the site within the user's permitted sites, and runs its lookups
+(for example open health checks) with the session's permissions. These lookups are not exposed as model tools.
+
 SQLite supports one local instance and survives process restarts. It is not a shared cloud session store. A real
 distributed deployment needs a store with tenant/user ownership, expiry, concurrency control, and idempotent
 submission supported by the downstream API.

@@ -13,6 +13,7 @@ Nothing in this document is an assertion about the actual Alsense API contract. 
 | Report types, formats, required fields, date semantics and submit/status flow | Adapt `Report`, `report_types`, `submit`, and status handling; do not invent defaults |
 | Support ticket endpoint/mail workflow and mandatory fields | Adapt `Ticket`, confirmation and `submit`; configure destination server-side |
 | Existing Azure AI Search index, field mapping and document-access rules | Replace mock `search_docs`; return restricted excerpts and approved source links |
+| Operations decision trees, their content owner, and an API listing open health checks per site/unit | Load the trees with `FLOWS_FILE`; implement `site_health_checks` in the adapter |
 | Shared gateway URL, model deployment, auth and content-safety policy | Configure model client and gateway routing; do not assume the SDK can route through an arbitrary gateway unchanged |
 | Cosmos DB/Redis choice and retention requirements | Replace `Store` while preserving user/tenant ownership, expiry, draft state and idempotency |
 
@@ -35,6 +36,24 @@ request fails. Revalidate permissions at action submission, including retries.
 The mock submission result is cached transactionally. A real API must honor an idempotency key or provide a
 reconciliation/status mechanism; a local database transaction cannot undo a network side effect if a process
 dies after the API succeeds. Do not automatically retry a non-idempotent ticket creation.
+
+## Guided troubleshooting flows
+
+Operations decision trees run as deterministic flows, not model answers. Each flow is YAML owned by the
+content owner and validated at startup: unknown node references, loops and unsupported checks fail fast.
+Node types are `ask` (yes/no), `identify_site` (match the user's description to a permitted site, offer
+"Do you mean …?" and stop after `attempts`), `check` (a backend lookup) and `outcome` (`resolve` or
+`ticket`). A `ticket` outcome prefills a support request with the answered steps; nothing is sent until the
+user confirms it. See `src/alsense_chat/troubleshooting.yaml` for the format.
+
+Where a tree says the bot "queries the database", the starter calls a backend-only adapter method with the
+user's permissions (`site_health_checks`, synthetic here). The model cannot call it, and there is no direct
+database access. Each request replays the flow with the answers so far, so no flow state is stored and every
+lookup is re-checked against the current session.
+
+Customer-provided trees and wording belong to the customer. Keep them in a local `*.local.yaml` file loaded
+through `FLOWS_FILE`; Git, Docker images and the export all exclude it. Ticket outcomes are recorded as
+`flow_ticket:<flow>:<node>` categories in the fallback backlog to show which branches still need people.
 
 ## Production deployment work not included
 

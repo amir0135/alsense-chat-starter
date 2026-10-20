@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
 from .config import ROOT, Settings, load_settings
+from .flows import load_flows
 from .runner import FoundryRunner, demo_run
 from .source import AlsenseSource, MockAlsenseSource
 from .store import MissingRecord, Store
@@ -51,7 +52,7 @@ def context(
         raise HTTPException(401, str(exc)) from None
     if not user.internal:
         raise HTTPException(403, "Chat is restricted to internal users.")
-    return Context(state.source, state.store, session_id, user)
+    return Context(state.source, state.store, session_id, user, flows=state.flows)
 
 
 def create_app(settings: Settings | None = None, source: AlsenseSource | None = None) -> FastAPI:
@@ -79,6 +80,7 @@ def create_app(settings: Settings | None = None, source: AlsenseSource | None = 
     app.state.settings = settings
     app.state.source = source
     app.state.store = Store(settings.db)
+    app.state.flows = load_flows(settings.flows_file)
 
     @app.get("/api/health")
     def health():

@@ -32,7 +32,7 @@
           <span class="action-symbol" aria-hidden="true">⌖</span>
           <span>My permitted sites</span>
         </button>
-        <button class="rail-action" type="button" data-message="My sensor is offline. What should I check?" disabled>
+        <button class="rail-action" type="button" data-message="/flows" data-display="Troubleshoot an issue" disabled>
           <span class="action-symbol" aria-hidden="true">⌁</span>
           <span>Troubleshoot an issue</span>
         </button>
@@ -97,12 +97,12 @@
               <span><strong>Find my sites</strong><small>See which sites this session can access</small></span>
               <span class="suggestion-arrow" aria-hidden="true">↗</span>
             </button>
-            <button type="button" class="suggestion" data-message="My sensor is offline. What should I check?" disabled>
+            <button type="button" class="suggestion" data-message="/flows" data-display="Troubleshoot an issue" disabled>
               <span class="suggestion-icon" aria-hidden="true">⌁</span>
-              <span><strong>Troubleshoot an issue</strong><small>Get guidance for an offline sensor</small></span>
+              <span><strong>Troubleshoot an issue</strong><small>Step-by-step checks for common issues</small></span>
               <span class="suggestion-arrow" aria-hidden="true">↗</span>
             </button>
-            <button type="button" class="suggestion" data-message="/reports" disabled>
+            <button type="button" class="suggestion" data-message="/reports" data-display="Explore reports" disabled>
               <span class="suggestion-icon" aria-hidden="true">▤</span>
               <span><strong>Explore reports</strong><small>Check the available report types</small></span>
               <span class="suggestion-arrow" aria-hidden="true">↗</span>
@@ -167,7 +167,7 @@
               </div>
             </div>
             <div id="ticket-fields" class="draft-grid" hidden>
-              <label>Alarm ID<input name="alarm_id" maxlength="100" placeholder="For example, alarm-site-a" required></label>
+              <label>Alarm ID (optional)<input name="alarm_id" maxlength="100" placeholder="For example, alarm-site-a"></label>
               <p class="field-help grid-span">Synthetic example: alarm-site-a for Demo North or alarm-site-b for Demo South.</p>
               <label class="grid-span">What happened?<textarea name="summary" maxlength="500" required></textarea></label>
               <label class="grid-span">What have you tried?<textarea name="steps_tried" maxlength="2000" required></textarea></label>
@@ -182,6 +182,10 @@
           </form>
         </section>
 
+        <div id="flow-hint" class="flow-hint" hidden>
+          <span>Type the company and site name below, or pick a site above.</span>
+          <button id="flow-cancel" class="flow-cancel" type="button">Stop check</button>
+        </div>
         <form id="composer" class="composer">
           <label class="visually-hidden" for="message">Your message</label>
           <textarea id="message" rows="1" required maxlength="6000" placeholder="Ask about your sites, an alarm, or a report…" disabled></textarea>

@@ -15,7 +15,7 @@ FILES = [".gitignore", ".dockerignore", ".env.example", "README.md", "PRODUCT.md
 def export(destination: Path) -> None:
     paths = [ROOT / name for name in FILES]
     paths += sorted((ROOT / "src" / "alsense_chat").glob("*.py"))
-    paths += [ROOT / "src" / "alsense_chat" / "alsense.semantic.yaml"]
+    paths += [ROOT / "src" / "alsense_chat" / name for name in ("alsense.semantic.yaml", "troubleshooting.yaml")]
     paths += sorted((ROOT / "tests").glob("*.py"))
     paths += [ROOT / "src" / "alsense_chat" / "static" / name for name in ("index.html", "widget.css", "widget.js")]
     if any(not path.is_file() or path.is_symlink() for path in paths):

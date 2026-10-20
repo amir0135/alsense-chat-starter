@@ -26,6 +26,8 @@ tool handlers without Azure. Use the buttons, ask about an offline sensor, or us
 /sites *
 /reports
 /docs offline sensor
+/flows
+/flow site-connection
 /report {"site_id":"site-a","report_type":"alarm-history","format":"pdf","start":"2026-01-01","end":"2026-01-31"}
 /ticket {"site_id":"site-a","alarm_id":"alarm-site-a","summary":"Offline sensor","steps_tried":"Checked power"}
 /status <prepared-report-action-id>
@@ -35,11 +37,18 @@ The widget presents prepared report/ticket payloads for review. Only its separat
 submission endpoint. Results and links are clearly synthetic. To correct a draft, prepare a replacement; the
 submission endpoint does not accept model- or client-supplied edits to an existing draft.
 
+**Troubleshoot an issue** opens guided checks. The repository ships one synthetic flow
+(`src/alsense_chat/troubleshooting.yaml`). To demo a customer's own decision trees, put them in a local
+`flows.local.yaml` and set `FLOWS_FILE=./flows.local.yaml` in `.env`. `*.local.yaml` is ignored by Git and
+Docker and is not part of the export, so customer material stays on your machine. See
+[`docs/integration.md`](docs/integration.md#guided-troubleshooting-flows) for the format.
+
 ## What's implemented
 
 | Component | Behavior |
 |---|---|
 | Curated tools | `search_docs`, `list_report_types`, `resolve_sites`, `prepare_report`, `get_report_status`, `prepare_support_ticket` |
+| Guided troubleshooting | Operations-owned YAML decision trees: yes/no steps, site identification with "Do you mean…?" and three attempts, a backend-only health-check lookup, and a prefilled support request when the tree says to open a ticket |
 | API boundary | `AlsenseSource` protocol and `MockAlsenseSource` with entirely synthetic users, sites, docs, alarms and submissions |
 | Local auth | Expiring opaque demo sessions; token hashes persisted, raw tokens never given to the runner |
 | Permission checks | Internal-user backend gate; tenant and allowed-site checks on draft preparation, status and submission |

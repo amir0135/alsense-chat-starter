@@ -230,6 +230,7 @@ Controls and evidence containers use small 3–5px corners. The composer is slig
 - **Sources:** Show synthetic document titles and excerpts in readable cards with approved local links. Keep tool names inside the expandable source summary.
 - **Activity:** A small spinner and plain-language status sit in the assistant turn while backend tools run.
 - **Actions:** Keep report and support drafts inline and distinguish prepared, submitting, submitted, and failed states.
+- **Guided checks:** Each step is an assistant turn labelled with the check and step number, with Yes/No or site pills as answers; the chosen answer stays highlighted and earlier steps lock. Results show "What we checked" and, when the tree says so, a prefilled support request instead of free-form advice.
 
 ## Do's and Don'ts
 

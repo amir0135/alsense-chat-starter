@@ -45,7 +45,7 @@ class Report(Arguments):
 
 class Ticket(Arguments):
     site_id: str = Field(min_length=1, max_length=100)
-    alarm_id: str = Field(min_length=1, max_length=100)
+    alarm_id: str | None = Field(default=None, min_length=1, max_length=100)
     summary: str = Field(min_length=1, max_length=500)
     steps_tried: str = Field(min_length=1, max_length=2000)
 
@@ -54,10 +54,16 @@ class Status(Arguments):
     action_id: str = Field(min_length=1, max_length=100)
 
 
+class SiteRef(Arguments):
+    site_id: str = Field(min_length=1, max_length=100)
+
+
 SCHEMAS = {
     "search_docs": Query, "list_report_types": Arguments, "resolve_sites": SitesQuery,
     "prepare_report": Report, "get_report_status": Status, "prepare_support_ticket": Ticket,
 }
+# Backend-only lookups used by guided troubleshooting flows; never offered to the model.
+FLOW_TOOLS = {"check_site_health": SiteRef}
 
 
 def model_definition() -> dict:
@@ -90,6 +96,7 @@ class Context:
     user: User
     evidence: list[dict] = field(default_factory=list)
     actions: list[dict] = field(default_factory=list)
+    flows: dict = field(default_factory=dict)
 
     def check_site(self, site_id: str) -> None:
         if site_id not in {s.id for s in self.user.sites if s.tenant_id == self.user.tenant_id}:
@@ -104,16 +111,17 @@ class Context:
                 raise ValueError("Report type or format unavailable. Use list_report_types.")
         elif kind == "ticket":
             ticket = Ticket.model_validate(payload)
-            if not self.source.alarm_exists(self.user, ticket.site_id, ticket.alarm_id):
+            if ticket.alarm_id and not self.source.alarm_exists(self.user, ticket.site_id, ticket.alarm_id):
                 raise ValueError("Alarm unavailable for this site.")
         else:
             raise ValueError("Unknown action kind.")
 
-    def execute(self, name: str, args: Any) -> dict:
-        if name not in SCHEMAS:
+    def execute(self, name: str, args: Any, *, flow: bool = False) -> dict:
+        schemas = {**SCHEMAS, **FLOW_TOOLS} if flow else SCHEMAS
+        if name not in schemas:
             return {"error": "Unknown tool."}
         try:
-            parsed = SCHEMAS[name].model_validate(args).model_dump(mode="json")
+            parsed = schemas[name].model_validate(args).model_dump(mode="json", exclude_none=True)
             result = self.dispatch(name, parsed)
         except (ValidationError, ValueError, MissingRecord):
             # Do not echo invalid input or upstream records into the model.
@@ -135,6 +143,9 @@ class Context:
                     (query == "*" or query in site.name.casefold() or query == site.id)]
         if name == "list_report_types":
             return [item.model_dump() for item in self.source.report_types(self.user)]
+        if name == "check_site_health":
+            self.check_site(args["site_id"])
+            return [check.model_dump() for check in self.source.site_health_checks(self.user, args["site_id"])]
         if name == "search_docs":
             docs = self.source.search_docs(self.user, args["query"])
             if any(not safe_link(doc.url) for doc in docs):

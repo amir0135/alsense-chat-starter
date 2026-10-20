@@ -9,8 +9,10 @@ let lastMessage = "";
 let reportTypes = null;
 let replacingCard = null;
 let lastReply = null;
+let activeFlow = null;
 const siteAlarms = new Map();
 const actionCards = new WeakMap();
+const DEFAULT_PLACEHOLDER = document.getElementById("message").placeholder;
 
 const STATUS_LABELS = {
   answer: "Answer",
@@ -23,6 +25,7 @@ const TOOL_PROGRESS = {
   search_docs: "Looking through the operations guidance…",
   list_report_types: "Checking the available reports…",
   get_report_status: "Checking the report status…",
+  check_site_health: "Checking the site’s health checks…",
   prepare_report: "Preparing the report for review…",
   prepare_support_ticket: "Preparing the support request for review…",
 };
@@ -289,6 +292,20 @@ function renderStatus(data, parent) {
   if (data?.result?.url) addLink(parent, "Open synthetic report view", data.result.url);
 }
 
+function renderHealth(data, parent) {
+  if (!Array.isArray(data)) return;
+  parent.append(node("p", "evidence-caption", "Health checks"));
+  const list = node("ul", "data-list");
+  const open = data.filter((check) => check.status === "open");
+  if (open.length === 0) list.append(node("li", "", "No open health checks"));
+  for (const check of open) {
+    const item = node("li");
+    item.append(node("strong", "", check.check || "Health check"), node("span", "alarm-badge", "Open"));
+    list.append(item);
+  }
+  parent.append(list);
+}
+
 function renderEvidence(reply, parent) {
   const sources = Array.isArray(reply.sources) ? reply.sources : [];
   for (const source of sources) {
@@ -305,6 +322,9 @@ function renderEvidence(reply, parent) {
         break;
       case "get_report_status":
         renderStatus(source.data, content);
+        break;
+      case "check_site_health":
+        renderHealth(source.data, content);
         break;
       default:
         break;
@@ -472,8 +492,123 @@ function renderAction(action, parent) {
   parent.append(card);
 }
 
+function flowMeta(flow) {
+  const meta = node("p", "flow-meta");
+  const glyph = node("span", "flow-glyph", "⌁");
+  glyph.setAttribute("aria-hidden", "true");
+  meta.append(glyph, document.createTextNode(
+    `Guided check · ${flow.title} · ${flow.kind === "outcome" ? "Result" : `Step ${flow.step}`}`));
+  return meta;
+}
+
+function startFlow(id, label) {
+  send(`/flow ${id} []`, label).catch((error) => showError(error.message));
+}
+
+function answerFlow(flow, value, label, button) {
+  if (busy) {
+    showError("Wait for the current answer to finish.");
+    return;
+  }
+  if (button) {
+    button.closest(".flow-options")?.querySelectorAll("button").forEach((item) => { item.disabled = true; });
+    button.setAttribute("aria-pressed", "true");
+  }
+  send(`/flow ${flow.id} ${JSON.stringify([...(flow.answers || []), value])}`, label)
+    .catch((error) => showError(error.message));
+}
+
+/* Only the newest step can be answered; the composer answers steps that ask for a site description. */
+function setActiveFlow(flow) {
+  const waiting = Boolean(flow && ["question", "confirm", "site"].includes(flow.kind));
+  activeFlow = waiting ? { id: flow.id, answers: flow.answers || [], expectsText: flow.kind === "site" } : null;
+  const groups = [...document.querySelectorAll(".flow-options")];
+  for (const group of waiting ? groups.slice(0, -1) : groups) {
+    group.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+  }
+  $("flow-hint").hidden = !activeFlow?.expectsText;
+  $("message").placeholder = activeFlow?.expectsText ? "Company and site name…" : DEFAULT_PLACEHOLDER;
+}
+
+function renderFlowMenu(flow, parent) {
+  const menu = node("div", "flow-menu");
+  for (const option of flow.options || []) {
+    const card = node("button", "flow-card");
+    card.type = "button";
+    const copy = node("span", "flow-card-copy");
+    copy.append(node("strong", "", option.label));
+    if (option.description) copy.append(node("small", "", option.description));
+    const arrow = node("span", "suggestion-arrow", "↗");
+    arrow.setAttribute("aria-hidden", "true");
+    card.append(copy, arrow);
+    card.addEventListener("click", () => startFlow(option.value, option.label));
+    menu.append(card);
+  }
+  parent.append(menu);
+}
+
+function renderFlowResult(flow, parent) {
+  const ticket = flow.outcome === "ticket";
+  const result = node("section", "flow-result");
+  result.dataset.kind = ticket ? "ticket" : "resolve";
+  result.append(node("p", "flow-result-label", ticket ? "Needs a support request" : "Next step for you"));
+  if (flow.trail?.length) {
+    result.append(node("h3", "", "What we checked"));
+    const list = node("ol", "flow-trail");
+    for (const item of flow.trail) {
+      const row = node("li");
+      row.append(node("span", "", item.label), node("strong", "", item.answer));
+      list.append(row);
+    }
+    result.append(list);
+  }
+  const buttons = node("div", "action-buttons");
+  if (ticket) {
+    const support = node("button", "confirm-action", "Prepare support request");
+    support.type = "button";
+    support.addEventListener("click", () => {
+      openDraft("ticket", flow.ticket, { fromFlow: true }).catch((error) => showError(error.message));
+    });
+    buttons.append(support);
+  }
+  const restart = node("button", "secondary-action", "Start over");
+  restart.type = "button";
+  restart.addEventListener("click", () => startFlow(flow.id, "Start over"));
+  buttons.append(restart);
+  result.append(buttons);
+  parent.append(result);
+}
+
+function renderFlow(flow, parent) {
+  if (flow.kind === "menu") {
+    renderFlowMenu(flow, parent);
+    return;
+  }
+  if (flow.kind === "outcome") {
+    renderFlowResult(flow, parent);
+    return;
+  }
+  const group = node("div", "flow-options");
+  group.setAttribute("role", "group");
+  group.setAttribute("aria-label", flow.kind === "site" ? "Your sites" : "Your answer");
+  for (const option of flow.options || []) {
+    const button = node("button", flow.kind === "site" ? "flow-option site-option" : "flow-option");
+    button.type = "button";
+    if (flow.kind === "site") {
+      const glyph = node("span", "site-glyph", "⌖");
+      glyph.setAttribute("aria-hidden", "true");
+      button.append(glyph);
+    }
+    button.append(document.createTextNode(option.label));
+    button.addEventListener("click", () => answerFlow(flow, option.value, option.label, button));
+    group.append(button);
+  }
+  parent.append(group);
+}
+
 function renderReply(reply) {
   lastReply = reply;
+  const flow = reply.flow || null;
   const article = node("article", "turn assistant-turn");
   article.append(node("span", "assistant-mark", "A"));
   const body = node("div", "assistant-body");
@@ -481,12 +616,20 @@ function renderReply(reply) {
   heading.append(node("strong", "", "Operations assistant"));
   heading.append(node("span", `answer-status ${reply.status || "answer"}`, STATUS_LABELS[reply.status] || "Answer"));
   body.append(heading);
+  if (flow && flow.kind !== "menu") body.append(flowMeta(flow));
   textParagraphs(body, reply.text, "answer-text");
-  renderEvidence(reply, body);
-  for (const action of reply.actions || []) renderAction(action, body);
-  renderFollowUps(reply, body);
+  if (flow) {
+    const cited = new Set(reply.source_ids || []);
+    renderEvidence({ ...reply, sources: (reply.sources || []).filter((source) => cited.has(source.source_id)) }, body);
+    renderFlow(flow, body);
+  } else {
+    renderEvidence(reply, body);
+    for (const action of reply.actions || []) renderAction(action, body);
+    renderFollowUps(reply, body);
+  }
   article.append(body);
   $("messages").append(article);
+  setActiveFlow(flow);
   scrollToLatest();
 }
 
@@ -520,6 +663,7 @@ async function send(message, displayText = message) {
   if (!token) throw new Error("Start a synthetic demo session before asking a question.");
   if (busy) throw new Error("Wait for the current answer to finish.");
   if (!questionText) return;
+  if (!/^\/flows?(\s|$)/.test(questionText)) setActiveFlow(null);
   busy = true;
   lastMessage = questionText;
   clearError();
@@ -641,6 +785,7 @@ function switchUser() {
   replacingCard = null;
   siteAlarms.clear();
   $("messages").replaceChildren();
+  setActiveFlow(null);
   $("welcome").hidden = false;
   $("draft-panel").hidden = true;
   $("draft-form").reset();
@@ -660,6 +805,7 @@ async function newConversation() {
     replacingCard = null;
     siteAlarms.clear();
     $("messages").replaceChildren();
+    setActiveFlow(null);
     $("welcome").hidden = false;
     $("draft-panel").hidden = true;
     $("draft-form").reset();
@@ -789,7 +935,7 @@ function closeDraft() {
   if (!$("message").disabled) $("message").focus();
 }
 
-async function openDraft(kind, prefill = null) {
+async function openDraft(kind, prefill = null, { fromFlow = false } = {}) {
   if (!user) throw new Error("Start a synthetic demo session first.");
   if (busy) throw new Error("Wait for the current answer to finish.");
   clearError();
@@ -808,7 +954,7 @@ async function openDraft(kind, prefill = null) {
   for (const input of reportFields.querySelectorAll("input")) input.disabled = kind !== "report";
   for (const input of ticketFields.querySelectorAll("input, textarea")) {
     input.disabled = kind !== "ticket";
-    input.required = kind === "ticket";
+    input.required = kind === "ticket" && input.name !== "alarm_id";
   }
   const multipleSites = user.sites.length > 1;
   if (kind === "report") {
@@ -831,9 +977,11 @@ async function openDraft(kind, prefill = null) {
     $("draft-summary-icon").textContent = "▤";
     updateReportBuilder();
   } else {
-    $("draft-title").textContent = prefill ? "Edit support request" : "Prepare a support request";
-    $("draft-description").textContent = "Describe the issue and what you’ve already tried.";
-    form.elements.alarm_id.value = prefill?.alarm_id || `alarm-${form.elements.site_id.value}`;
+    $("draft-title").textContent = prefill && !fromFlow ? "Edit support request" : "Prepare a support request";
+    $("draft-description").textContent = fromFlow
+      ? "Filled in from your guided check. Review it before preparing."
+      : "Describe the issue and what you’ve already tried.";
+    form.elements.alarm_id.value = prefill ? prefill.alarm_id || "" : `alarm-${form.elements.site_id.value}`;
     form.elements.summary.value = prefill?.summary || "";
     form.elements.steps_tried.value = prefill?.steps_tried || "";
     $("draft-summary-icon").textContent = "↗";
@@ -862,7 +1010,17 @@ $("toggle-code").addEventListener("click", () => {
 });
 $("composer").addEventListener("submit", (event) => {
   event.preventDefault();
-  send($("message").value).catch(showError);
+  const text = $("message").value.trim();
+  if (activeFlow?.expectsText && text) {
+    if (text.length > 200) showError("Keep the company and site name under 200 characters.");
+    else answerFlow(activeFlow, text, text);
+    return;
+  }
+  send($("message").value).catch((error) => showError(error.message));
+});
+$("flow-cancel").addEventListener("click", () => {
+  setActiveFlow(null);
+  $("message").focus();
 });
 $("message").addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
@@ -876,7 +1034,10 @@ $("message").addEventListener("input", () => {
   input.style.height = `${Math.min(input.scrollHeight, 120)}px`;
 });
 document.querySelectorAll("[data-message]").forEach((button) => {
-  button.addEventListener("click", () => send(button.dataset.message).catch(showError));
+  button.addEventListener("click", () => {
+    send(button.dataset.message, button.dataset.display || button.dataset.message)
+      .catch((error) => showError(error.message));
+  });
 });
 $("open-report").addEventListener("click", () => openDraft("report").catch((error) => showError(error.message)));
 $("open-ticket").addEventListener("click", () => openDraft("ticket").catch((error) => showError(error.message)));
@@ -892,7 +1053,7 @@ $("draft-form").addEventListener("change", (event) => {
   const { name, value } = event.target;
   const form = $("draft-form");
   if (name === "site_id" && draftKind === "ticket") {
-    form.elements.alarm_id.value = `alarm-${value}`;
+    if (form.elements.alarm_id.value) form.elements.alarm_id.value = `alarm-${value}`;
     setSummary(`Support request for ${siteName(value)}`, true);
   }
   if (draftKind !== "report") return;
@@ -918,10 +1079,11 @@ $("draft-form").addEventListener("submit", async (event) => {
     if (!form.reportValidity()) return;
     payload = {
       site_id: form.elements.site_id.value,
-      alarm_id: form.elements.alarm_id.value,
       summary: form.elements.summary.value,
       steps_tried: form.elements.steps_tried.value,
     };
+    const alarm = form.elements.alarm_id.value.trim();
+    if (alarm) payload.alarm_id = alarm;
   }
   const displayText = draftRequestLabel(draftKind, payload);
   const button = $("prepare-draft");

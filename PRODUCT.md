@@ -31,7 +31,8 @@ The optional hosted demo uses Azure AI Foundry with synthetic tools.
 ## Capabilities and Constraints
 
 Implemented tools cover documentation search, report types, permitted-site lookup, report preparation
-and status, and support-request preparation. Local demo mode is deterministic; Foundry mode uses the
+and status, and support-request preparation. Guided troubleshooting runs operations-owned decision trees
+with backend lookups and hands unresolved cases to a prefilled support request. Local demo mode is deterministic; Foundry mode uses the
 configured model with backend-owned tools. Submissions are mock-only. Cloud sessions use replica-local
 SQLite and are not durable across app replacement. Real Alsense authentication, APIs, Search, shared
 storage, and production authorization are not implemented.

@@ -37,6 +37,13 @@ class ReportType(BaseModel):
     formats: list[str]
 
 
+class HealthCheck(BaseModel):
+    id: str
+    type: str
+    check: str
+    status: str
+
+
 class AlsenseSource(Protocol):
     """API adapter boundary. A real implementation must validate users/me and use delegated auth.
 
@@ -48,6 +55,7 @@ class AlsenseSource(Protocol):
     def report_types(self, user: User) -> list[ReportType]: ...
     def search_docs(self, user: User, query: str) -> list[Document]: ...
     def site_alarms(self, user: User, site_id: str) -> list[Alarm]: ...
+    def site_health_checks(self, user: User, site_id: str) -> list[HealthCheck]: ...
     def alarm_exists(self, user: User, site_id: str, alarm_id: str) -> bool: ...
     def submit(self, user: User, kind: str, payload: dict, idempotency_key: str) -> dict: ...
 
@@ -94,6 +102,16 @@ class MockAlsenseSource:
         if site_id not in allowed:
             return []
         return [Alarm(id=f"alarm-{site_id}", label="Sensor offline", status="active")]
+
+    def site_health_checks(self, user: User, site_id: str) -> list[HealthCheck]:
+        allowed = {site.id for site in user.sites if site.tenant_id == user.tenant_id}
+        if site_id not in allowed:
+            return []
+        # Synthetic: Demo North's gateway is unreachable, Demo South has no open health checks.
+        if site_id == "site-a":
+            return [HealthCheck(id=f"hc-{site_id}-gateway", type="primary-gateway-offline",
+                                check="Primary Gateway Offline", status="open")]
+        return []
 
     def alarm_exists(self, user: User, site_id: str, alarm_id: str) -> bool:
         return any(alarm.id == alarm_id for alarm in self.site_alarms(user, site_id))
