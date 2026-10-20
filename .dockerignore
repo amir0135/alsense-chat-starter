@@ -1,12 +1,19 @@
-.env
-.venv
-__pycache__
-.pytest_cache
-.ruff_cache
-*.sqlite3
-*.sqlite3-shm
-*.sqlite3-wal
-dist
-.git
-.azure
-*.local.yaml
+# Allowlist: only what the image needs enters the Docker build context.
+*
+!pyproject.toml
+!uv.lock
+!.python-version
+!src/
+!scripts/
+
+# Never, even inside allowed folders: customer material, secrets, local data and caches.
+**/*.local.yaml
+**/*.local.*
+**/.env
+**/.env.*
+**/.azure
+**/*.sqlite3*
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache

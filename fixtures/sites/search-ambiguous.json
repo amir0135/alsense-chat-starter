@@ -1,0 +1,12 @@
+[
+  {
+    "id": "site-c1",
+    "name": "Demo East Hall",
+    "tenant_id": "customer-c"
+  },
+  {
+    "id": "site-c2",
+    "name": "Demo East Depot",
+    "tenant_id": "customer-c"
+  }
+]

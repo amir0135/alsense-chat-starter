@@ -1,0 +1,7 @@
+{
+  "id": "example-idempotency-key",
+  "kind": "report",
+  "status": "accepted",
+  "url": "/reference/report/example-idempotency-key",
+  "synthetic": true
+}

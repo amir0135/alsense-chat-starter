@@ -1,0 +1,42 @@
+# One-command local demo. Synthetic data only; no Azure credentials needed.
+#
+#   cp .env.example .env          # optional: Compose works without it
+#   docker compose up --build     # then open http://127.0.0.1:8001
+#   docker compose down           # stop; demo data is kept in the named volume
+#   docker compose down -v        # stop and delete demo data (sessions, drafts, audit trail)
+#
+# Requires Docker Compose 2.24 or newer.
+name: alsense-chat-starter
+
+services:
+  app:
+    build:
+      context: .
+      args:
+        UV_DEFAULT_INDEX: ${UV_DEFAULT_INDEX:-https://pypi.org/simple}
+        APP_COMMIT: ${APP_COMMIT:-}
+    image: alsense-chat-starter:local
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Container paths win over values in .env that were written for running on the host.
+      SESSION_DB: /data/sessions.sqlite3
+      APP_PORT: "8001"
+      # The image ships only the synthetic flows. Mount local ones with compose.override.yaml.
+      FLOWS_FILE: ""
+      SCENARIOS_FILE: ""
+    ports:
+      # Loopback only: the demo sign-in has no production authentication.
+      - "127.0.0.1:${APP_PORT:-8001}:8001"
+    volumes:
+      - demo-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+volumes:
+  demo-data:

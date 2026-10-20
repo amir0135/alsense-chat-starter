@@ -1,0 +1,7 @@
+{
+  "site_id": "site-a",
+  "report_type": "alarm-history",
+  "format": "pdf",
+  "start": "2026-01-01",
+  "end": "2026-01-31"
+}

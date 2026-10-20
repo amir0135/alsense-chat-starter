@@ -1,0 +1,17 @@
+# Optional local overrides for Docker Compose.
+#
+#   cp compose.override.example.yaml compose.override.yaml
+#
+# Compose loads compose.override.yaml automatically. It is ignored by Git and Docker, so it is the place to
+# mount customer-provided flows that must never be committed or baked into an image. Mount only files that
+# exist: Docker creates an empty folder for a missing source path.
+services:
+  app:
+    volumes:
+      - ./flows.local.yaml:/config/flows.local.yaml:ro
+      # - ./scenarios.local.yaml:/config/scenarios.local.yaml:ro
+    environment:
+      FLOWS_FILE: /config/flows.local.yaml
+      # SCENARIOS_FILE: /config/scenarios.local.yaml
+      # A clean demo on every start:
+      # RESET_DEMO_DATA_ON_START: "true"

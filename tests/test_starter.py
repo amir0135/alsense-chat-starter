@@ -405,6 +405,19 @@ def test_export_excludes_credentials_databases_and_parent_repo(tmp_path):
         assert "alsense-chat-starter/DESIGN.md" in names
         assert "alsense-chat-starter/.env.example" in names
         assert "alsense-chat-starter/.github/workflows/ci.yml" in names
+        for required in (
+            "uv.lock",
+            ".python-version",
+            "compose.yaml",
+            "scripts/doctor.py",
+            "scripts/dev.py",
+            ".devcontainer/devcontainer.json",
+            "fixtures/reports/failed.json",
+            "evals/synthetic/troubleshooting.yaml",
+            "src/alsense_chat/adapters/alsense/__init__.py",
+        ):
+            assert f"alsense-chat-starter/{required}" in names, required
+        assert not any(".local." in name or name.endswith("/.env") for name in names)
         assert all("demo-data" not in name and "/.git/" not in name and not name.endswith(".sqlite3") for name in names)
         assert "alsense-chat-starter/.env" not in names
     with pytest.raises(FileExistsError):

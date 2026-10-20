@@ -1,0 +1,43 @@
+{
+  "additionalProperties": false,
+  "description": "What an adapter raises for a failed upstream call: a category, never the upstream body.",
+  "properties": {
+    "service": {
+      "enum": [
+        "identity",
+        "sites",
+        "knowledge",
+        "health",
+        "reports",
+        "support",
+        "model"
+      ],
+      "title": "Service",
+      "type": "string"
+    },
+    "category": {
+      "enum": [
+        "not_configured",
+        "unauthenticated",
+        "forbidden",
+        "not_found",
+        "unavailable",
+        "timeout",
+        "stale"
+      ],
+      "title": "Category",
+      "type": "string"
+    },
+    "http_status": {
+      "title": "Http Status",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "service",
+    "category",
+    "http_status"
+  ],
+  "title": "ErrorResponse",
+  "type": "object"
+}

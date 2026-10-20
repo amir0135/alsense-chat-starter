@@ -185,7 +185,7 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = if (!empty(imageTag)) {
     workloadProfileName: 'Consumption'
     configuration: {
       activeRevisionsMode: 'Single'
-      ingress: { external: true, targetPort: 8000, transport: 'http', allowInsecure: false }
+      ingress: { external: true, targetPort: 8001, transport: 'http', allowInsecure: false }
       registries: [{ server: registry.properties.loginServer, identity: identity.id }]
       secrets: [{
         name: 'demo-access-code'
@@ -211,9 +211,9 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = if (!empty(imageTag)) {
           { name: 'OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT', value: 'false' }
         ]
         probes: [
-          { type: 'Startup', httpGet: { path: '/api/health', port: 8000 }, periodSeconds: 5, failureThreshold: 36 }
-          { type: 'Readiness', httpGet: { path: '/api/health', port: 8000 }, periodSeconds: 10 }
-          { type: 'Liveness', httpGet: { path: '/api/health', port: 8000 }, periodSeconds: 30 }
+          { type: 'Startup', httpGet: { path: '/api/health', port: 8001 }, periodSeconds: 5, failureThreshold: 36 }
+          { type: 'Readiness', httpGet: { path: '/api/health', port: 8001 }, periodSeconds: 10 }
+          { type: 'Liveness', httpGet: { path: '/api/health', port: 8001 }, periodSeconds: 30 }
         ]
       }]
       scale: { minReplicas: 1, maxReplicas: 1 }

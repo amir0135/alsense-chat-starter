@@ -18,7 +18,15 @@ FILES = [
     "uv.lock",
     "export.py",
     "Dockerfile",
+    "compose.yaml",
+    "compose.override.example.yaml",
+    "Makefile",
+    ".devcontainer/devcontainer.json",
+    ".devcontainer/Dockerfile",
+    ".vscode/tasks.json",
     ".github/workflows/ci.yml",
+    "fixtures/README.md",
+    "evals/README.md",
     "docs/architecture.drawio",
     "infra/main.bicep",
     "infra/resources.bicep",
@@ -35,6 +43,9 @@ PATTERNS = [
     "src/alsense_chat/static/*.css",
     "src/alsense_chat/static/*.js",
     "tests/*.py",
+    "scripts/*.py",
+    "fixtures/**/*.json",
+    "evals/synthetic/*.yaml",
 ]
 # Customer material, credentials and local state never leave the machine, whatever the patterns say.
 NEVER = [".env", "*.local.*", "compose.override.yaml", "*.sqlite3*", "*.pem", "*.key", "*.pfx"]

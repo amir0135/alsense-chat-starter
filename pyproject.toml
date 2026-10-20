@@ -33,3 +33,12 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# These run before dependencies exist, on whatever Python is installed (3.8+), to explain what is missing.
+"scripts/{dev,doctor,check_protected_files}.py" = ["UP"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src"]
+warn_unused_ignores = true

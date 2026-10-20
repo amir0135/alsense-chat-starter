@@ -517,3 +517,27 @@ class _Walk:
             self.source_ids,
             self.why(f"{label} · {humanize(category).lower()}"),
         )
+
+
+def main(paths: list[str]) -> int:
+    """Validate flow files: python -m alsense_chat.flows [FILE ...] (default: the shipped sample)."""
+    failed = False
+    for path in paths or [str(SAMPLE_FLOWS)]:
+        try:
+            flows = load_flows(path)
+        except (FlowError, OSError) as exc:
+            failed = True
+            print(f"FAIL {path}\n  {exc}".replace("\n- ", "\n  - "))
+            continue
+        offered = [flow_id for flow_id, flow in flows.items() if available(flow)]
+        print(f"OK   {path}: {len(flows)} valid flow(s), {len(offered)} offered in demos")
+        for flow_id, flow in flows.items():
+            state = "offered" if available(flow) else "not offered"
+            print(f"  - {flow_id} v{flow['version']} ({flow['status']}, {state}), owner: {flow['owner']}")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    import sys
+
+    sys.exit(main(sys.argv[1:]))

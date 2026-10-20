@@ -1,0 +1,13 @@
+{
+  "id": "alice",
+  "tenant_id": "customer-a",
+  "name": "Synthetic Alice",
+  "internal": true,
+  "sites": [
+    {
+      "id": "site-a",
+      "name": "Demo North",
+      "tenant_id": "customer-a"
+    }
+  ]
+}

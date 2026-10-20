@@ -1,4 +1,5 @@
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -199,5 +200,6 @@ def test_flows_file_replaces_the_sample_flows(tmp_path):
 
 def test_local_flow_files_stay_out_of_git_and_images():
     root = Path(__file__).resolve().parents[1]
-    assert "*.local.yaml" in (root / ".gitignore").read_text()
-    assert "*.local.yaml" in (root / ".dockerignore").read_text()
+    for name in ("flows.local.yaml", "scenarios.local.yaml"):
+        assert subprocess.run(["git", "check-ignore", "-q", "--no-index", name], cwd=root).returncode == 0
+    assert "**/*.local.yaml" in (root / ".dockerignore").read_text().splitlines()
