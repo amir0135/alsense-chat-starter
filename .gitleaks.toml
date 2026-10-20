@@ -1,0 +1,10 @@
+# Secret scanning: CI runs gitleaks with its default rules plus these narrowly scoped exceptions.
+# Allowlist only values that are public by design, and keep each exception limited to one file and pattern.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Azure built-in role definition IDs (GUIDs) in the Bicep template are public identifiers, not secrets"
+condition = "AND"
+paths = ['''^infra/resources\.bicep$''']
+regexes = ['''^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$''']

@@ -25,6 +25,7 @@ FILES = [
     ".devcontainer/Dockerfile",
     ".vscode/tasks.json",
     ".github/workflows/ci.yml",
+    ".gitleaks.toml",
     "fixtures/README.md",
     "evals/README.md",
     "docs/architecture.drawio",
