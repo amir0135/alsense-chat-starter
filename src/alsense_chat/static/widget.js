@@ -6,6 +6,11 @@ let draftKind = "";
 let busy = false;
 let cloudMode = false;
 let lastMessage = "";
+let reportTypes = null;
+let replacingCard = null;
+let lastReply = null;
+const siteAlarms = new Map();
+const actionCards = new WeakMap();
 
 const STATUS_LABELS = {
   answer: "Answer",
@@ -21,6 +26,105 @@ const TOOL_PROGRESS = {
   prepare_report: "Preparing the report for review…",
   prepare_support_ticket: "Preparing the support request for review…",
 };
+const ACTION_COPY = {
+  report: {
+    title: "Report ready for review", confirm: "Confirm synthetic report", retry: "Retry synthetic report",
+    final: "Synthetic report ready", link: "Open synthetic report", progress: "Report progress",
+  },
+  ticket: {
+    title: "Support request ready for review", confirm: "Confirm synthetic request", retry: "Retry synthetic request",
+    final: "Synthetic request received", link: "Open synthetic record", progress: "Support request progress",
+  },
+};
+const ACTION_STATES = {
+  prepared: { badge: "Not sent", steps: ["is-done", "is-current", ""] },
+  submitting: { badge: "Submitting…", steps: ["is-done", "is-busy", ""] },
+  submitted: { badge: "Submitted · synthetic", steps: ["is-done", "is-done", "is-success"] },
+  failed: { badge: "Not sent", steps: ["is-done", "is-error", ""] },
+  replaced: { badge: "Replaced", steps: ["is-done", "", ""] },
+};
+const REPORT_NOTES = {
+  "alarm-history": "Alarm events for the chosen period",
+  "site-status": "Site status for the chosen period",
+};
+const DEFAULT_PERIOD = "last-30";
+const PERIODS = {
+  "last-7": (today) => [addDays(today, -6), today],
+  "last-30": (today) => [addDays(today, -29), today],
+  "this-month": (today) => [new Date(today.getFullYear(), today.getMonth(), 1), today],
+  "last-month": (today) => [new Date(today.getFullYear(), today.getMonth() - 1, 1), new Date(today.getFullYear(), today.getMonth(), 0)],
+};
+const dateFormat = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric" });
+
+function startOfToday() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+function addDays(date, days) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+}
+
+/* Local calendar dates; toISOString() would shift the day across time zones. */
+function isoDate(date) {
+  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("-");
+}
+
+function parseIsoDate(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || "");
+  if (!match) return null;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return date.getMonth() === Number(match[2]) - 1 && date.getDate() === Number(match[3]) ? date : null;
+}
+
+function dayNumber(date) {
+  return Math.round(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86400000);
+}
+
+function formatPeriod(startValue, endValue) {
+  const start = parseIsoDate(startValue);
+  const end = parseIsoDate(endValue);
+  if (!start || !end || dayNumber(start) > dayNumber(end)) return "";
+  try {
+    return dateFormat.formatRange(start, end);
+  } catch {
+    return `${dateFormat.format(start)} – ${dateFormat.format(end)}`;
+  }
+}
+
+function periodLength(startValue, endValue) {
+  const days = dayNumber(parseIsoDate(endValue)) - dayNumber(parseIsoDate(startValue)) + 1;
+  return `${days} ${days === 1 ? "day" : "days"}`;
+}
+
+/* Mirrors the backend report window so problems surface before preparing. */
+function periodProblem(startValue, endValue) {
+  const start = parseIsoDate(startValue);
+  const end = parseIsoDate(endValue);
+  if (!start || !end) return "Choose a start and an end date.";
+  if (dayNumber(start) > dayNumber(end)) return "The start date must be on or before the end date.";
+  if (dayNumber(end) > dayNumber(startOfToday())) return "The period can’t end after today.";
+  if (dayNumber(end) - dayNumber(start) > 366) return "Reports can cover up to 366 days. Choose a shorter period.";
+  return "";
+}
+
+function matchPeriod(startValue, endValue) {
+  const today = startOfToday();
+  for (const [key, range] of Object.entries(PERIODS)) {
+    const [start, end] = range(today);
+    if (isoDate(start) === startValue && isoDate(end) === endValue) return key;
+  }
+  return "custom";
+}
+
+function siteName(siteId) {
+  return user?.sites?.find((site) => site.id === siteId)?.name || "";
+}
+
+function reportTypeLabel(typeId) {
+  return reportTypes?.find((item) => item.id === typeId)?.label
+    || ({ "alarm-history": "Alarm history", "site-status": "Site status" })[typeId] || "Report";
+}
 
 function showError(message) {
   $("error").textContent = message;
@@ -132,6 +236,11 @@ function textParagraphs(parent, text, className) {
 
 function renderSites(data, parent, text) {
   if (!Array.isArray(data) || data.length === 0) return;
+  for (const site of data) {
+    if (site?.id && Array.isArray(site.alarms)) {
+      siteAlarms.set(site.id, site.alarms.filter((alarm) => alarm.status === "active").map((alarm) => alarm.label).filter(Boolean));
+    }
+  }
   const lowered = String(text || "").toLowerCase();
   const named = data.every((site) => site.name && lowered.includes(site.name.toLowerCase()));
   const alarms = data.flatMap((site) => (Array.isArray(site.alarms) ? site.alarms : []).map((alarm) => ({ site, alarm })));
@@ -219,79 +328,152 @@ function renderFollowUps(reply, parent) {
   for (const [label, kind] of options) {
     const button = node("button", "follow-up", label);
     button.type = "button";
-    button.addEventListener("click", () => openDraft(kind).catch(showError));
+    button.addEventListener("click", () => openDraft(kind).catch((error) => showError(error.message)));
     row.append(button);
   }
   parent.append(row);
 }
 
-function formatActionValue(key, value) {
-  const labels = {
-    site_id: user?.sites?.find((site) => site.id === value)?.name || "Permitted site",
-    report_type: ({ "alarm-history": "Alarm history", "site-status": "Site status" })[value] || "Report",
-    format: typeof value === "string" ? value.toUpperCase() : String(value),
-    start: value,
-    end: value,
-    alarm_id: value,
-    summary: value,
-    steps_tried: value,
-  };
-  return labels[key] ?? String(value);
-}
-
 function draftRequestLabel(kind, payload) {
-  const site = user?.sites?.find((item) => item.id === payload.site_id)?.name || "your permitted site";
+  const site = siteName(payload.site_id) || "your permitted site";
   if (kind === "report") {
-    const format = payload.format.toUpperCase();
-    const article = /^[AEIOU]/.test(format) ? "an" : "a";
-    return `Prepare ${article} ${format} ${formatActionValue("report_type", payload.report_type)} report for ${site} · ${payload.start} to ${payload.end}`;
+    const type = reportTypeLabel(payload.report_type).toLowerCase();
+    const article = /^[aeiou]/.test(type) ? "an" : "a";
+    return `Prepare ${article} ${type} report for ${site} · ${formatPeriod(payload.start, payload.end)} · ${payload.format.toUpperCase()}`;
   }
   return `Prepare a support request for ${site}: ${payload.summary}`;
 }
 
-function renderAction(action, parent) {
-  const card = node("section", "action-card");
-  const isReport = action.kind === "report";
-  card.append(node("h3", "", isReport ? "Report ready for review" : "Support request ready for review"));
-  card.append(node("p", "", "Nothing has been sent. Confirm below to submit this synthetic demo action."));
-
-  const labels = isReport
-    ? [["site_id", "Site"], ["report_type", "Report"], ["format", "Format"], ["start", "From"], ["end", "To"]]
-    : [["site_id", "Site"], ["alarm_id", "Alarm"], ["summary", "Summary"], ["steps_tried", "Steps tried"]];
-  const details = node("dl", "action-details");
-  for (const [key, label] of labels) {
-    if (action.payload?.[key] === undefined) continue;
-    details.append(node("dt", "", label), node("dd", "", formatActionValue(key, action.payload[key])));
+function actionRows(kind, payload) {
+  const site = siteName(payload.site_id) || "Permitted site";
+  if (kind === "report") {
+    const period = formatPeriod(payload.start, payload.end);
+    return [
+      ["Site", site],
+      ["Report", reportTypeLabel(payload.report_type)],
+      ["Period", period ? `${period} · ${periodLength(payload.start, payload.end)}` : ""],
+      ["Format", String(payload.format || "").toUpperCase()],
+    ];
   }
-  card.append(details);
+  return [["Site", site], ["Alarm", payload.alarm_id], ["Summary", payload.summary], ["Steps tried", payload.steps_tried]];
+}
 
-  const button = node("button", "confirm-action", isReport ? "Confirm synthetic report" : "Confirm synthetic request");
-  button.type = "button";
+function renderAction(action, parent) {
+  const kind = action.kind === "report" ? "report" : "ticket";
+  const copy = ACTION_COPY[kind];
+  const payload = action.payload || {};
+  const card = node("section", "action-card");
+  const head = node("div", "action-head");
+  const titles = node("div");
+  titles.append(node("h3", "", copy.title), node("p", "", "Nothing has been sent. Confirm below to submit this synthetic demo action."));
+  const badge = node("span", "action-badge");
+  head.append(titles, badge);
+
+  const steps = node("ol", "action-steps");
+  steps.setAttribute("aria-label", copy.progress);
+  const stepItems = [];
+  const stepLabels = [];
+  for (const label of ["Prepared", "Confirm", copy.final]) {
+    const item = node("li");
+    const dot = node("span", "step-dot");
+    dot.setAttribute("aria-hidden", "true");
+    const text = node("span", "", label);
+    item.append(dot, text);
+    steps.append(item);
+    stepItems.push(item);
+    stepLabels.push(text);
+  }
+
+  const details = node("dl", "action-details");
+  for (const [label, value] of actionRows(kind, payload)) {
+    if (value) details.append(node("dt", "", label), node("dd", "", value));
+  }
+
+  const buttons = node("div", "action-buttons");
+  const confirm = node("button", "confirm-action", copy.confirm);
+  confirm.type = "button";
+  const edit = node("button", "secondary-action", "Edit details");
+  edit.type = "button";
+  buttons.append(confirm, edit);
   const state = node("p", "submission-state");
+  state.setAttribute("role", "status");
   state.hidden = true;
-  button.addEventListener("click", async () => {
-    button.disabled = true;
-    button.textContent = "Submitting…";
+
+  const setState = (name) => {
+    const config = ACTION_STATES[name];
+    card.dataset.state = name;
+    badge.textContent = config.badge;
+    stepItems.forEach((item, index) => {
+      item.className = config.steps[index];
+      if (config.steps[index] === "is-current" || config.steps[index] === "is-busy") item.setAttribute("aria-current", "step");
+      else item.removeAttribute("aria-current");
+    });
+    stepLabels[1].textContent = name === "submitted" ? "Confirmed" : "Confirm";
+  };
+  setState("prepared");
+
+  confirm.addEventListener("click", async () => {
+    setState("submitting");
+    confirm.disabled = true;
+    confirm.classList.add("is-busy");
+    confirm.replaceChildren(node("span", "button-spinner"), document.createTextNode("Submitting…"));
+    edit.disabled = true;
     state.hidden = true;
+    state.classList.remove("failed");
     try {
       const result = await (await api(`/api/actions/${encodeURIComponent(action.id)}/submit`, { confirmed: true })).json();
+      setState("submitted");
       state.textContent = "Submitted to the synthetic demo. No real report or support request was sent.";
       state.hidden = false;
-      button.textContent = "Submitted";
-      if (result.url) addLink(card, "Open synthetic record", result.url);
+      buttons.replaceChildren();
+      if (approvedLink(result.url)) {
+        const open = node("a", "secondary-action", copy.link);
+        const arrow = node("span", "", "↗");
+        arrow.setAttribute("aria-hidden", "true");
+        open.append(arrow);
+        open.href = result.url;
+        open.target = "_blank";
+        open.rel = "noopener noreferrer";
+        buttons.append(open);
+      }
+      if (kind === "report") {
+        const status = node("button", "secondary-action", "Check status");
+        status.type = "button";
+        status.addEventListener("click", () => {
+          send(`/status ${action.id}`, "Check the status of this report").catch((error) => showError(error.message));
+        });
+        buttons.append(status);
+      }
     } catch (error) {
+      setState("failed");
       state.textContent = error.message;
       state.classList.add("failed");
       state.hidden = false;
-      button.disabled = false;
-      button.textContent = isReport ? "Retry synthetic report" : "Retry synthetic request";
+      confirm.disabled = false;
+      confirm.classList.remove("is-busy");
+      confirm.textContent = copy.retry;
+      edit.disabled = false;
     }
   });
-  card.append(button, state);
+  edit.addEventListener("click", () => {
+    openDraft(kind, payload).then(() => { replacingCard = card; }).catch((error) => showError(error.message));
+  });
+  actionCards.set(card, {
+    replace() {
+      if (card.dataset.state === "submitted" || card.dataset.state === "submitting") return;
+      setState("replaced");
+      buttons.replaceChildren();
+      state.classList.remove("failed");
+      state.textContent = "Replaced by your edited draft below. This one won’t be sent.";
+      state.hidden = false;
+    },
+  });
+  card.append(head, steps, details, buttons, state);
   parent.append(card);
 }
 
 function renderReply(reply) {
+  lastReply = reply;
   const article = node("article", "turn assistant-turn");
   article.append(node("span", "assistant-mark", "A"));
   const body = node("div", "assistant-body");
@@ -435,6 +617,8 @@ async function startSession() {
     })).json();
     token = session.token;
     user = session.user;
+    reportTypes = null;
+    siteAlarms.clear();
     $("access-code").value = "";
     $("welcome").hidden = false;
     $("messages").replaceChildren();
@@ -453,6 +637,9 @@ function switchUser() {
   if (busy) return;
   token = "";
   user = null;
+  reportTypes = null;
+  replacingCard = null;
+  siteAlarms.clear();
   $("messages").replaceChildren();
   $("welcome").hidden = false;
   $("draft-panel").hidden = true;
@@ -470,6 +657,8 @@ async function newConversation() {
     const session = await (await api("/api/session/new", {})).json();
     token = session.token;
     user = session.user;
+    replacingCard = null;
+    siteAlarms.clear();
     $("messages").replaceChildren();
     $("welcome").hidden = false;
     $("draft-panel").hidden = true;
@@ -483,41 +672,178 @@ async function newConversation() {
   }
 }
 
-async function openDraft(kind) {
+function renderSiteField(selectedId) {
+  const select = $("draft-site");
+  select.replaceChildren();
+  for (const site of user.sites) select.add(new Option(site.name, site.id));
+  if (user.sites.some((site) => site.id === selectedId)) select.value = selectedId;
+  const single = user.sites.length === 1;
+  const pill = $("site-fixed");
+  select.hidden = single;
+  pill.hidden = !single;
+  pill.replaceChildren();
+  if (!single) return;
+  const glyph = node("span", "site-glyph", "⌖");
+  glyph.setAttribute("aria-hidden", "true");
+  pill.append(glyph, node("span", "", user.sites[0].name));
+  for (const label of siteAlarms.get(user.sites[0].id) || []) pill.append(node("span", "alarm-chip", label));
+}
+
+function renderReportChoices(selectedId) {
+  const container = $("report-type-options");
+  const selected = reportTypes.some((item) => item.id === selectedId) ? selectedId : reportTypes[0]?.id;
+  container.replaceChildren();
+  for (const report of reportTypes) {
+    const card = node("label", "choice-card");
+    const input = node("input");
+    input.type = "radio";
+    input.name = "report_type";
+    input.value = report.id;
+    input.checked = report.id === selected;
+    const mark = node("span", "choice-mark");
+    mark.setAttribute("aria-hidden", "true");
+    const copy = node("span", "choice-copy");
+    copy.append(node("strong", "", report.label || "Report"));
+    const formats = Array.isArray(report.formats) ? report.formats.map((format) => format.toUpperCase()).join(" or ") : "";
+    const note = node("small");
+    if (REPORT_NOTES[report.id]) note.append(document.createTextNode(`${REPORT_NOTES[report.id]}${formats ? " · " : ""}`));
+    if (formats) note.append(node("span", "nowrap", formats));
+    if (note.childNodes.length) copy.append(note);
+    card.append(input, mark, copy);
+    container.append(card);
+  }
+}
+
+function syncFormats() {
+  const form = $("draft-form");
+  const typeId = form.querySelector('input[name="report_type"]:checked')?.value;
+  const allowed = reportTypes?.find((item) => item.id === typeId)?.formats || ["pdf", "csv"];
+  const inputs = [...form.querySelectorAll('input[name="format"]')];
+  for (const input of inputs) input.disabled = !allowed.includes(input.value);
+  if (!inputs.some((input) => input.checked && !input.disabled)) {
+    const first = inputs.find((input) => !input.disabled);
+    if (first) first.checked = true;
+  }
+}
+
+function applyPeriod(key, { focusCustom = false } = {}) {
+  const form = $("draft-form");
+  const custom = key === "custom";
+  if (!custom) {
+    const [start, end] = PERIODS[key](startOfToday());
+    form.elements.start.value = isoDate(start);
+    form.elements.end.value = isoDate(end);
+  }
+  $("custom-range").hidden = !custom;
+  if (custom && focusCustom) form.elements.start.focus();
+}
+
+function readReportPayload() {
+  const form = $("draft-form");
+  return {
+    site_id: form.elements.site_id.value,
+    report_type: form.querySelector('input[name="report_type"]:checked')?.value || "",
+    format: form.querySelector('input[name="format"]:checked')?.value || "",
+    start: form.elements.start.value,
+    end: form.elements.end.value,
+  };
+}
+
+function setSummary(text, animate) {
+  const summary = $("draft-summary-text");
+  if (summary.textContent === text) return;
+  summary.textContent = text;
+  if (!animate) return;
+  summary.classList.remove("is-updated");
+  void summary.offsetWidth;
+  summary.classList.add("is-updated");
+}
+
+function updateReportBuilder({ animate = false } = {}) {
+  const form = $("draft-form");
+  const payload = readReportPayload();
+  const problem = periodProblem(payload.start, payload.end);
+  const custom = form.elements.period.value === "custom";
+  const readout = $("range-readout");
+  readout.replaceChildren();
+  if (!problem) {
+    readout.append(node("strong", "", formatPeriod(payload.start, payload.end)),
+      document.createTextNode(` · ${periodLength(payload.start, payload.end)}`));
+  }
+  readout.hidden = Boolean(problem);
+  $("range-error").textContent = problem;
+  $("range-error").hidden = !problem;
+  for (const input of [form.elements.start, form.elements.end]) {
+    if (problem && custom) input.setAttribute("aria-invalid", "true");
+    else input.removeAttribute("aria-invalid");
+  }
+  const parts = [reportTypeLabel(payload.report_type), siteName(payload.site_id)];
+  parts.push(...(problem ? ["Check the period"] : [formatPeriod(payload.start, payload.end), payload.format.toUpperCase()]));
+  setSummary(parts.filter(Boolean).join(" · "), animate);
+  $("prepare-draft").disabled = Boolean(problem) || !payload.report_type || !payload.format;
+}
+
+function closeDraft() {
+  $("draft-panel").hidden = true;
+  replacingCard = null;
+  if (!$("message").disabled) $("message").focus();
+}
+
+async function openDraft(kind, prefill = null) {
   if (!user) throw new Error("Start a synthetic demo session first.");
   if (busy) throw new Error("Wait for the current answer to finish.");
   clearError();
+  if (kind === "report" && !reportTypes) reportTypes = await (await api("/api/report-types")).json();
   draftKind = kind;
+  replacingCard = null;
+  const panel = $("draft-panel");
   const form = $("draft-form");
+  panel.dataset.kind = kind;
   form.reset();
-  const siteSelect = form.elements.site_id;
-  siteSelect.replaceChildren();
-  for (const site of user.sites) siteSelect.add(new Option(site.name, site.id));
+  renderSiteField(prefill?.site_id);
   const reportFields = $("report-fields");
   const ticketFields = $("ticket-fields");
   reportFields.hidden = kind !== "report";
   ticketFields.hidden = kind !== "ticket";
-  for (const input of reportFields.querySelectorAll("input, select")) {
-    input.disabled = kind !== "report";
-    input.required = kind === "report";
-  }
+  for (const input of reportFields.querySelectorAll("input")) input.disabled = kind !== "report";
   for (const input of ticketFields.querySelectorAll("input, textarea")) {
     input.disabled = kind !== "ticket";
     input.required = kind === "ticket";
   }
+  const multipleSites = user.sites.length > 1;
   if (kind === "report") {
-    const types = await (await api("/api/report-types")).json();
-    form.elements.report_type.replaceChildren();
-    for (const report of types) form.elements.report_type.add(new Option(report.label, report.id));
-    $("draft-title").textContent = "Prepare a report";
-    $("draft-description").textContent = "Choose the site, report and date range for your draft.";
+    renderReportChoices(prefill?.report_type);
+    syncFormats();
+    for (const input of form.querySelectorAll('input[name="format"]')) {
+      if (input.value === prefill?.format && !input.disabled) input.checked = true;
+    }
+    const period = prefill ? matchPeriod(prefill.start, prefill.end) : DEFAULT_PERIOD;
+    form.elements.period.value = period;
+    if (period === "custom") {
+      form.elements.start.value = prefill.start;
+      form.elements.end.value = prefill.end;
+    }
+    applyPeriod(period);
+    $("draft-title").textContent = prefill ? "Edit report details" : "Prepare a report";
+    $("draft-description").textContent = multipleSites
+      ? "Choose the site, report, period and format for your draft."
+      : "Choose the report, period and format for your draft.";
+    $("draft-summary-icon").textContent = "▤";
+    updateReportBuilder();
   } else {
-    $("draft-title").textContent = "Prepare a support request";
+    $("draft-title").textContent = prefill ? "Edit support request" : "Prepare a support request";
     $("draft-description").textContent = "Describe the issue and what you’ve already tried.";
-    form.elements.alarm_id.value = `alarm-${siteSelect.value}`;
+    form.elements.alarm_id.value = prefill?.alarm_id || `alarm-${form.elements.site_id.value}`;
+    form.elements.summary.value = prefill?.summary || "";
+    form.elements.steps_tried.value = prefill?.steps_tried || "";
+    $("draft-summary-icon").textContent = "↗";
+    setSummary(`Support request for ${siteName(form.elements.site_id.value)}`, false);
+    $("prepare-draft").disabled = false;
   }
-  $("draft-panel").hidden = false;
-  siteSelect.focus();
+  panel.hidden = false;
+  const focusTarget = multipleSites ? form.elements.site_id
+    : kind === "report" ? form.querySelector('input[name="report_type"]:checked') : form.elements.summary;
+  focusTarget?.focus();
   scrollToLatest();
 }
 
@@ -555,27 +881,67 @@ document.querySelectorAll("[data-message]").forEach((button) => {
 $("open-report").addEventListener("click", () => openDraft("report").catch((error) => showError(error.message)));
 $("open-ticket").addEventListener("click", () => openDraft("ticket").catch((error) => showError(error.message)));
 $("suggest-report").addEventListener("click", () => openDraft("report").catch((error) => showError(error.message)));
-$("cancel-draft").addEventListener("click", () => { $("draft-panel").hidden = true; });
-$("draft-form").addEventListener("change", (event) => {
-  if (event.target.name === "site_id" && draftKind === "ticket") {
-    $("draft-form").elements.alarm_id.value = `alarm-${event.target.value}`;
+$("cancel-draft").addEventListener("click", closeDraft);
+$("draft-panel").addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !event.defaultPrevented) {
+    event.preventDefault();
+    closeDraft();
   }
+});
+$("draft-form").addEventListener("change", (event) => {
+  const { name, value } = event.target;
+  const form = $("draft-form");
+  if (name === "site_id" && draftKind === "ticket") {
+    form.elements.alarm_id.value = `alarm-${value}`;
+    setSummary(`Support request for ${siteName(value)}`, true);
+  }
+  if (draftKind !== "report") return;
+  if (name === "period") applyPeriod(value, { focusCustom: value === "custom" });
+  if (name === "report_type") syncFormats();
+  updateReportBuilder({ animate: true });
+});
+$("draft-form").addEventListener("input", (event) => {
+  if (draftKind === "report" && (event.target.name === "start" || event.target.name === "end")) updateReportBuilder();
 });
 $("draft-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
-  if (!form.reportValidity()) return;
-  const payload = Object.fromEntries(new FormData(form));
+  let payload;
+  if (draftKind === "report") {
+    payload = readReportPayload();
+    updateReportBuilder();
+    if (periodProblem(payload.start, payload.end) || !payload.report_type || !payload.format) {
+      if (form.elements.period.value === "custom") form.elements.start.focus();
+      return;
+    }
+  } else {
+    if (!form.reportValidity()) return;
+    payload = {
+      site_id: form.elements.site_id.value,
+      alarm_id: form.elements.alarm_id.value,
+      summary: form.elements.summary.value,
+      steps_tried: form.elements.steps_tried.value,
+    };
+  }
   const displayText = draftRequestLabel(draftKind, payload);
+  const button = $("prepare-draft");
+  const replaced = replacingCard;
   clearError();
+  button.disabled = true;
+  button.textContent = "Preparing…";
   try {
     const completed = await send(`/${draftKind} ${JSON.stringify(payload)}`, displayText);
     if (completed) {
       $("draft-panel").hidden = true;
       form.reset();
+      replacingCard = null;
+      if (replaced && lastReply?.actions?.length) actionCards.get(replaced)?.replace();
     }
   } catch (error) {
     showError(error.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Prepare for review";
   }
 });
 

@@ -212,13 +212,14 @@ Controls and evidence containers use small 3–5px corners. The composer is slig
 ### Cards / Containers
 - **Conversation:** No enclosing card around the whole chat; distinguish individual messages and evidence in place.
 - **Suggestions:** White, outlined rows with a small red utility mark and concise title plus explanation.
-- **Drafts:** Inline bordered panel above the composer. Never hide a consequential review form in a modal.
-- **Action confirmation:** Show the chosen site and fields, state that nothing has been sent, then provide one explicit confirmation action.
+- **Drafts:** Inline bordered panel above the composer. Never hide a consequential review form in a modal. The report draft is a builder: a live one-line summary and the prepare action stay pinned to the panel's bottom edge while its controls scroll.
+- **Action confirmation:** Show the chosen site and fields, state that nothing has been sent, then provide one explicit confirmation action. A three-step tracker (prepared, confirm, synthetic result) shows where the action stands; "Edit details" prepares a replacement draft and marks the old one replaced.
 
 ### Inputs / Fields
 - **Style:** White fill, 1px neutral border, 5px corners, and 8–10px internal padding.
+- **Choices:** Few, known options use native radios styled as choice cards (report type), pill chips (period presets) or a segmented control (format). Selection is a Signal Red border on a Signal Wash fill; a single permitted site shows as a fixed pill instead of a one-option select.
 - **Focus:** Visible red outline for keyboard focus; composer also shifts its border and uses a restrained ring.
-- **Error / Disabled:** Use a nearby text message for errors and preserve readable contrast for disabled controls.
+- **Error / Disabled:** Use a nearby text message for errors and preserve readable contrast for disabled controls. Validate date ranges inline and disable the prepare action until the range is valid.
 - **Access code:** Mask by default with a user-controlled show/hide button. Never persist the value.
 
 ### Navigation

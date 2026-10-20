@@ -119,18 +119,52 @@
       </section>
 
       <div class="compose-area">
-        <section id="draft-panel" class="draft-panel" aria-labelledby="draft-title" hidden>
+        <section id="draft-panel" class="draft-panel" aria-labelledby="draft-title" data-kind="report" hidden>
           <div class="draft-heading">
             <div><h2 id="draft-title">Prepare a report</h2><p id="draft-description">Review the details before anything is submitted.</p></div>
             <button id="cancel-draft" class="icon-button" type="button" aria-label="Close form">×</button>
           </div>
-          <form id="draft-form">
-            <label>Site<select name="site_id" required></select></label>
-            <div id="report-fields" class="draft-grid">
-              <label>Report type<select name="report_type" required></select></label>
-              <label>Format<select name="format" required><option value="pdf">PDF</option><option value="csv">CSV</option></select></label>
-              <label>From<input name="start" type="date" required></label>
-              <label>To<input name="end" type="date" required></label>
+          <form id="draft-form" novalidate>
+            <div class="builder-row">
+              <label class="row-label" for="draft-site">Site</label>
+              <div class="row-control">
+                <select id="draft-site" name="site_id" required></select>
+                <p id="site-fixed" class="site-pill" hidden></p>
+              </div>
+            </div>
+            <div id="report-fields" class="report-builder">
+              <div class="builder-row">
+                <span id="report-type-label" class="row-label">Report</span>
+                <div id="report-type-options" class="choice-cards row-control" role="radiogroup" aria-labelledby="report-type-label"></div>
+              </div>
+              <div class="builder-row">
+                <span id="period-label" class="row-label">Period</span>
+                <div class="row-control">
+                  <div class="chip-row" role="radiogroup" aria-labelledby="period-label">
+                    <label class="chip"><input type="radio" name="period" value="last-7"><span>Last 7 days</span></label>
+                    <label class="chip"><input type="radio" name="period" value="last-30" checked><span>Last 30 days</span></label>
+                    <label class="chip"><input type="radio" name="period" value="this-month"><span>This month</span></label>
+                    <label class="chip"><input type="radio" name="period" value="last-month"><span>Last month</span></label>
+                    <label class="chip"><input type="radio" name="period" value="custom"><span>Custom</span></label>
+                  </div>
+                  <div id="custom-range" class="range-inputs" hidden>
+                    <label>From<input name="start" type="date" required aria-describedby="range-error"></label>
+                    <span aria-hidden="true">–</span>
+                    <label>To<input name="end" type="date" required aria-describedby="range-error"></label>
+                  </div>
+                  <p id="range-readout" class="range-readout"></p>
+                  <p id="range-error" class="field-error" role="alert" hidden></p>
+                </div>
+              </div>
+              <div class="builder-row">
+                <span id="format-label" class="row-label">Format</span>
+                <div class="row-control">
+                  <div class="segmented" role="radiogroup" aria-labelledby="format-label">
+                    <label class="segment"><input type="radio" name="format" value="pdf" checked><span>PDF</span></label>
+                    <label class="segment"><input type="radio" name="format" value="csv"><span>CSV</span></label>
+                  </div>
+                </div>
+              </div>
             </div>
             <div id="ticket-fields" class="draft-grid" hidden>
               <label>Alarm ID<input name="alarm_id" maxlength="100" placeholder="For example, alarm-site-a" required></label>
@@ -139,8 +173,11 @@
               <label class="grid-span">What have you tried?<textarea name="steps_tried" maxlength="2000" required></textarea></label>
             </div>
             <div class="draft-actions">
-              <p>Preparing is not submitting. You’ll review a separate confirmation.</p>
-              <button class="start-session" type="submit">Prepare for review</button>
+              <div class="draft-summary">
+                <span id="draft-summary-icon" class="summary-icon" aria-hidden="true">▤</span>
+                <div><strong id="draft-summary-text"></strong><p>Preparing is not submitting. You’ll review a separate confirmation.</p></div>
+              </div>
+              <button id="prepare-draft" class="start-session" type="submit">Prepare for review</button>
             </div>
           </form>
         </section>
