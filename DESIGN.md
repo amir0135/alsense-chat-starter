@@ -26,6 +26,12 @@ typography:
     fontWeight: 680
     lineHeight: 1.12
     letterSpacing: "-.045em"
+  page-title:
+    fontFamily: '"Segoe UI", system-ui, sans-serif'
+    fontSize: "28px"
+    fontWeight: 680
+    lineHeight: 1.15
+    letterSpacing: "-.03em"
   welcome-mobile:
     fontFamily: '"Segoe UI", system-ui, sans-serif'
     fontSize: "29px"
@@ -180,6 +186,7 @@ White work surfaces and a cool-gray rail create the hierarchy; red is reserved f
 
 ### Hierarchy
 - **Display** (680, `clamp(28px, 3.1vw, 40px)`, 1.12): The welcome heading only.
+- **Page title** (680, 28px fixed, 1.15): The demo scenarios view and the System status page.
 - **Title** (700, 16–18px): Workspace and form titles.
 - **Body** (400, 14–16px, 1.5–1.68): Questions, answers, and explanatory text; keep answer prose near 70ch.
 - **Label** (650, 12px, 1.4): Fields, session state, and compact source metadata.
@@ -215,6 +222,22 @@ Controls and evidence containers use small 3–5px corners. The composer is slig
 - **Drafts:** Inline bordered panel above the composer. Never hide a consequential review form in a modal. The report draft is a builder: a live one-line summary and the prepare action stay pinned to the panel's bottom edge while its controls scroll.
 - **Action confirmation:** Show the chosen site and fields, state that nothing has been sent, then provide one explicit confirmation action. A three-step tracker (prepared, confirm, synthetic result) shows where the action stands; "Edit details" prepares a replacement draft and marks the old one replaced.
 
+### Synthetic banner
+- A permanent full-width strip above the workspace and on the System status page, in Warning Wash with Warning Ink. It says whether the demo is local or hosted, that it uses synthetic data and does not connect to Alsense, and links to System status. It is never dismissible.
+
+### Demo scenarios
+- **Gallery:** opens in place of the conversation (no modal), with a page title and two sections, "Core journeys" and "Failure cases". Each scenario is a row in one bordered list, not a grid of cards: title, what it demonstrates, "Starts as" and "Expected" pairs, a Warning Wash chip per synthetic fault, and Start scenario / Reset scenario on the right. The running scenario's row takes Signal Wash with a "Running" pill; an unavailable one is gray with its reason in error text.
+- **Coach:** an inline panel above the composer with a Signal Red border on Signal Wash. The heading is the scenario title; the line below starts with "Step N of M." followed by the presenter's note. Actions: Run step (primary), Reset scenario (secondary) and End (text). When complete, the panel turns success green and shows the expected result. No eyebrow above the heading.
+
+### Why this result?
+- A collapsed `details` element under each assistant reply. It lists, as label and value pairs on a Soft Gray panel: assistant type, flow and version, site resolved, health result, outcome, lookups, evidence titles, reply checks, data source and a reference id. Display names only, never internal ids, tool names or JSON.
+
+### Error states
+- Replies that could not complete carry an Error Wash "Couldn't complete" status and name the problem and the recovery in plain words: no access to a site, a service temporarily unavailable or too slow, out-of-date status, several matching sites, no approved answer, and "prepared but not submitted" on a draft that failed to send. Offer a support request only for service failures. Never collapse these into a generic error.
+
+### System status page
+- A separate Operate page on the rail gray: back link, page title, one-line purpose, an overall pill (Demo ready in success green, Needs attention in error red) with version and commit, then bordered sections. Capability rows align in three columns: label, value with an optional muted detail, and a state badge: Synthetic (Warning Wash), Configured (Success Wash), Unavailable or Needs attention (Error Wash), Future integration or Disabled (neutral gray). A flow table lists version, status, owner and whether it is offered. Nothing secret appears on the page.
+
 ### Inputs / Fields
 - **Style:** White fill, 1px neutral border, 5px corners, and 8–10px internal padding.
 - **Choices:** Few, known options use native radios styled as choice cards (report type), pill chips (period presets) or a segmented control (format). Selection is a Signal Red border on a Signal Wash fill; a single permitted site shows as a fixed pill instead of a one-option select.
@@ -238,7 +261,7 @@ Controls and evidence containers use small 3–5px corners. The composer is slig
 - **Do** keep questions, answers, evidence, and confirmation in one conversation.
 - **Do** identify the selected synthetic persona and its permitted site scope.
 - **Do** explain access-code errors and offer a direct recovery instruction without exposing the code.
-- **Do** label synthetic data and mock submissions wherever they could be mistaken for live results.
+- **Do** label synthetic data and mock submissions wherever they could be mistaken for live results, and keep the synthetic banner on every page.
 - **Do** support keyboard submission, multiline input, visible focus, and reduced-motion preferences.
 
 ### Don't:

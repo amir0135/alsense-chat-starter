@@ -31,11 +31,15 @@ The optional hosted demo uses Azure AI Foundry with synthetic tools.
 ## Capabilities and Constraints
 
 Implemented tools cover documentation search, report types, permitted-site lookup, report preparation
-and status, and support-request preparation. Guided troubleshooting runs operations-owned decision trees
-with backend lookups and hands unresolved cases to a prefilled support request. Local demo mode is deterministic; Foundry mode uses the
-configured model with backend-owned tools. Submissions are mock-only. Cloud sessions use replica-local
-SQLite and are not durable across app replacement. Real Alsense authentication, APIs, Search, shared
-storage, and production authorization are not implemented.
+and status, and support-request preparation. Guided troubleshooting runs versioned, operations-owned
+decision trees with backend lookups and hands unresolved cases to a prefilled support request. Local demo
+mode is deterministic; Foundry mode uses the configured model with backend-owned tools. Submissions are
+mock-only. Every external capability sits behind an adapter interface with synthetic implementations by
+default; failures (no access, service unavailable, stale data, ambiguous site, no approved answer, prepared
+but not submitted) have distinct messages and can be switched on for demos. Demo scenarios, a readiness
+page and a "Why this result?" panel make the synthetic nature and the evidence visible. Cloud sessions use
+replica-local SQLite and are not durable across app replacement. Real Alsense authentication, APIs, Search,
+shared storage, and production authorization are not implemented.
 
 ## Brand Commitments
 
@@ -55,3 +59,4 @@ There are no real customer records or production API contracts in the starter.
 - Show the sources behind an answer.
 - Preparing a report or ticket is not submission; require a distinct user confirmation.
 - Label synthetic data and mock outcomes clearly.
+- Say exactly what failed and what to do next; never fall back silently to other data or another assistant.

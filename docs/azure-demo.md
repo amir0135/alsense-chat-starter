@@ -71,9 +71,11 @@ vault for its retention interval; you cannot immediately reuse its name after de
 1. Open the URL printed by the deployment. Enter your access code and choose synthetic Alice.
 2. Ask “Which sites can I access?” The model invokes the backend tool and sees only Demo North.
 3. Ask “My sensor is offline. What should I check?” The model retrieves synthetic troubleshooting evidence.
-4. Prepare an alarm-history report with a date window. Review the form; nothing is sent until you press Submit.
+4. Prepare an alarm-history report with a date window. Review the draft; nothing is sent until you press Confirm.
 5. Prepare a ticket for `alarm-site-a`, providing the summary and steps tried. Submission remains synthetic.
 6. Start a new session as Bob: his only site is Demo South. Asking for Alice's site cannot access it.
+7. Open **Demo scenarios** for scripted walkthroughs, including failure cases, and `/system` to see which
+   capabilities are synthetic. Scenarios started from an existing session don't need the access code again.
 
 The form buttons use deterministic backend tools even in Foundry mode; ordinary messages use the real model.
 Every screen labels the data as synthetic. There are no real emails, tickets or reports sent to Alsense.
