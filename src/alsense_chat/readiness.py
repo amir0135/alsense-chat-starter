@@ -67,7 +67,9 @@ def system_status(state) -> dict:
     kind = state.services.kind
     flows: dict = state.flows
     offered = [flow_id for flow_id, flow in flows.items() if available(flow)]
-    scenario_reasons = [unavailable_reason(s, flows, settings.features, kind) for s in state.scenarios]
+    scenario_reasons = [
+        unavailable_reason(s, flows, settings.features, kind, state.persona_ids) for s in state.scenarios
+    ]
 
     items = []
     if settings.agent_mode == "foundry":

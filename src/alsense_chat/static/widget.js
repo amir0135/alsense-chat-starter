@@ -193,6 +193,9 @@ async function api(path, body) {
     } catch {
       detail = "";
     }
+    /* Categorized integration failures carry the backend's own user-safe wording: show it as is, so an
+       upstream 401 or 404 is never mistaken for an expired session or a missing draft. */
+    if (detail && response.headers.get("X-Error-Category")) throw new Error(detail);
     throw new Error(friendlyRequestError(response.status, path, detail));
   }
   return response;

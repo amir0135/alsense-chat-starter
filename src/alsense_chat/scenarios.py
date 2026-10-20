@@ -63,7 +63,10 @@ class Scenario(BaseModel):
 
 def load_scenarios(path: str | Path = "", personas: set[str] | None = None) -> list[Scenario]:
     source = Path(path or SAMPLE_SCENARIOS)
-    data = yaml.safe_load(source.read_text(encoding="utf-8")) or {}
+    try:
+        data = yaml.safe_load(source.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        raise ScenarioError(f"{source.name}: not valid YAML ({exc.__class__.__name__}).") from None
     raw = data.get("scenarios") if isinstance(data, dict) else None
     if not isinstance(raw, list) or not raw:
         raise ScenarioError(f"{source.name}: needs a non-empty 'scenarios' list.")
@@ -91,8 +94,12 @@ def load_scenarios(path: str | Path = "", personas: set[str] | None = None) -> l
     return scenarios
 
 
-def unavailable_reason(scenario: Scenario, flows: dict, features: frozenset[str], data_source: str) -> str:
+def unavailable_reason(
+    scenario: Scenario, flows: dict, features: frozenset[str], data_source: str, personas: set[str] | None = None
+) -> str:
     """Why a scenario can't run in this configuration, or an empty string when it can."""
+    if personas is not None and scenario.persona not in personas:
+        return f"Needs the demo user {scenario.persona!r}, which this sign-in doesn't offer."
     missing = [flow_id for flow_id in scenario.requires_flows if flow_id not in flows or not available(flows[flow_id])]
     if missing:
         return f"Needs the guided check {', '.join(missing)}, which isn't loaded or approved for demos."

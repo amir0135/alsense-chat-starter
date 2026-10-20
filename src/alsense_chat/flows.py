@@ -134,7 +134,7 @@ def flow_problems(flow_id: str, flow: dict) -> list[str]:
     nodes = flow.get("nodes")
     if not isinstance(nodes, dict) or not nodes:
         return [*problems, f"{flow_id}: nodes must be a non-empty mapping."]
-    if flow.get("start") not in nodes:
+    if not _names_node(flow.get("start"), nodes):
         problems.append(f"{flow_id}: start must name a node.")
     linked = True
     for node_id, node in nodes.items():
@@ -160,23 +160,27 @@ def flow_problems(flow_id: str, flow: dict) -> list[str]:
         if not isinstance(node[kind], str) or not node[kind].strip():
             problems.append(f"{where}: {kind} needs text.")
         for branch in BRANCHES[kind]:
-            if node.get(branch) not in nodes:
+            if not _names_node(node.get(branch), nodes):
                 problems.append(f"{where}: '{branch}' must name a node.")
                 linked = False
         for branch in OPTIONAL_BRANCHES.get(kind, ()):
-            if branch in node and node[branch] not in nodes:
+            if branch in node and not _names_node(node[branch], nodes):
                 problems.append(f"{where}: '{branch}' must name a node.")
                 linked = False
         problems += _node_problems(where, kind, node)
-    if linked and flow.get("start") in nodes:
+    if linked and _names_node(flow.get("start"), nodes):
         problems += _graph_problems(flow_id, nodes, flow["start"])
     return problems
+
+
+def _names_node(value: object, nodes: dict) -> bool:
+    return isinstance(value, str) and value in nodes
 
 
 def _node_problems(where: str, kind: str, node: dict) -> list[str]:
     problems = []
     if kind == "check":
-        if node["check"] not in CHECK_TOOLS:
+        if not isinstance(node["check"], str) or node["check"] not in CHECK_TOOLS:
             problems.append(f"{where}: check must be one of {sorted(CHECK_TOOLS)}.")
         wanted = node.get("any_open")
         if not (isinstance(wanted, list) and wanted and all(isinstance(item, str) and item for item in wanted)):
@@ -433,12 +437,15 @@ class _Walk:
             if site is None:
                 candidates = _candidates(text, sites)
                 if len(candidates) > 1:
-                    choice = self.next_answer()
-                    if choice is None:
-                        options = [{"label": item["name"], "value": item["name"]} for item in candidates]
-                        yield "reply", self.prompt(node.get("ambiguous", DEFAULT_AMBIGUOUS), "site", options, True)
-                        return PENDING
-                    site = _exact_site(choice, candidates)
+                    while len(candidates) > 1:
+                        choice = self.next_answer()
+                        if choice is None:
+                            options = [{"label": item["name"], "value": item["name"]} for item in candidates]
+                            yield "reply", self.prompt(node.get("ambiguous", DEFAULT_AMBIGUOUS), "site", options, True)
+                            return PENDING
+                        exact = _exact_site(choice, candidates)
+                        candidates = [exact] if exact else _candidates(choice, candidates)
+                    site = candidates[0] if candidates else None
                 elif candidates:
                     guess = candidates[0]
                     confirmation = self.next_answer()

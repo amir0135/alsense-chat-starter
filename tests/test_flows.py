@@ -203,3 +203,28 @@ def test_local_flow_files_stay_out_of_git_and_images():
     for name in ("flows.local.yaml", "scenarios.local.yaml"):
         assert subprocess.run(["git", "check-ignore", "-q", "--no-index", name], cwd=root).returncode == 0
     assert "**/*.local.yaml" in (root / ".dockerignore").read_text().splitlines()
+
+
+@pytest.mark.parametrize(
+    "field, value",
+    [("start", ["ready"]), ("check", ["site_health"]), ("yes", ["done"])],
+)
+def test_unexpected_yaml_types_are_reported_not_crashed(field, value):
+    flow = {
+        "title": "x",
+        "version": "1.0.0",
+        "status": "draft",
+        "owner": "o",
+        "approved_for_demo": True,
+        "start": "ready",
+        "nodes": {
+            "ready": {"check": "site_health", "any_open": ["a"], "yes": "done", "no": "done"},
+            "done": {"outcome": "Done.", "kind": "resolve"},
+        },
+    }
+    if field == "start":
+        flow["start"] = value
+    else:
+        flow["nodes"]["ready"][field] = value
+    with pytest.raises(FlowError):
+        validate_flow("typed", flow)

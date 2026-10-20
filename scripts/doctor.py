@@ -213,6 +213,9 @@ def check_flows(report: Report, settings):
             "fail", "Troubleshooting flows invalid", f"{exc}\nCheck: uv run python scripts/dev.py validate-flows"
         )
         return None
+    except Exception as exc:  # Report, never crash: the remaining checks still matter.
+        report.add("fail", f"Troubleshooting flows unreadable ({type(exc).__name__})", "Check FLOWS_FILE.")
+        return None
     summary = ", ".join(f"{flow_id} v{flow['version']}" for flow_id, flow in flows.items() if available(flow))
     if not settings.flows_file:
         report.add("ok", f"Sample flow loaded: {summary or 'none offered'}")
@@ -233,17 +236,19 @@ def check_scenarios(report: Report, settings, flows) -> None:
     from alsense_chat.adapters.synthetic import PERSONAS
     from alsense_chat.scenarios import ScenarioError, load_scenarios, unavailable_reason
 
+    # Demo personas exist only with synthetic identities; with a real sign-in, scenarios report unavailable.
+    synthetic = settings.data_source == "synthetic"
+    personas = {name for name, value in PERSONAS.items() if value["internal"]} if synthetic else None
     try:
-        scenarios = load_scenarios(
-            settings.scenarios_file, {name for name, value in PERSONAS.items() if value["internal"]}
-        )
+        scenarios = load_scenarios(settings.scenarios_file, personas)
     except (ScenarioError, OSError) as exc:
         report.add("fail", "Demo scenarios invalid", str(exc))
         return
+    available = personas if personas is not None else set()
     ready = [
         s
         for s in scenarios
-        if flows is not None and not unavailable_reason(s, flows, settings.features, settings.data_source)
+        if flows is not None and not unavailable_reason(s, flows, settings.features, settings.data_source, available)
     ]
     state = "ok" if len(ready) == len(scenarios) else "warn"
     report.add(state, f"Demo scenarios: {len(ready)} of {len(scenarios)} available")

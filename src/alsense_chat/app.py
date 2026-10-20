@@ -148,9 +148,12 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         removed = Store.reset(settings.db)
         log.warning("RESET_DEMO_DATA_ON_START: removed %s", ", ".join(removed) or "no existing demo data")
     services = services or build_services(settings.data_source)
-    personas = services.identity.personas() if isinstance(services.identity, PersonaDirectory) else []
+    # A real identity provider offers no demo personas: scenarios then load but report themselves unavailable.
+    directory = isinstance(services.identity, PersonaDirectory)
+    personas = services.identity.personas() if directory else []  # type: ignore[attr-defined]
+    persona_ids = {persona["id"] for persona in personas}
     flows = load_flows(settings.flows_file)
-    scenarios = load_scenarios(settings.scenarios_file, {persona["id"] for persona in personas})
+    scenarios = load_scenarios(settings.scenarios_file, persona_ids if directory else None)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -183,10 +186,15 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
     app.state.flows = flows
     app.state.scenarios = scenarios
     app.state.persona_names = [persona["name"] for persona in personas]
+    app.state.persona_ids = persona_ids
 
     @app.exception_handler(IntegrationError)
     def integration_error(request: Request, exc: IntegrationError):
-        return JSONResponse({"detail": exc.user_message, "category": exc.category}, status_code=exc.http_status)
+        return JSONResponse(
+            {"detail": exc.user_message, "category": exc.category},
+            status_code=exc.http_status,
+            headers={"X-Error-Category": exc.category},
+        )
 
     def start_session(user: User, faults: frozenset[str] = frozenset(), scenario: str = "") -> dict:
         if not user.internal:
@@ -229,7 +237,9 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
                 "fault_labels": [FAULTS[fault] for fault in scenario.faults],
                 "persona_name": names.get(scenario.persona, {}).get("name", scenario.persona),
                 "persona_sites": names.get(scenario.persona, {}).get("sites", []),
-                "unavailable_reason": unavailable_reason(scenario, flows, settings.features, services.kind),
+                "unavailable_reason": unavailable_reason(
+                    scenario, flows, settings.features, services.kind, persona_ids
+                ),
             }
             for scenario in scenarios
         ]
@@ -253,7 +263,7 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         scenario = next((item for item in scenarios if item.id == scenario_id), None)
         if scenario is None:
             raise HTTPException(404, "Scenario unavailable.")
-        reason = unavailable_reason(scenario, flows, settings.features, services.kind)
+        reason = unavailable_reason(scenario, flows, settings.features, services.kind, persona_ids)
         if reason:
             raise HTTPException(409, reason)
         session = start_session(services.identity.users_me(scenario.persona), frozenset(scenario.faults), scenario.id)

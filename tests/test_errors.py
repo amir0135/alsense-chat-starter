@@ -199,3 +199,29 @@ def test_real_adapters_fail_clearly_instead_of_falling_back(tmp_path):
         create_app(Settings(db=str(tmp_path / "x.sqlite3"), data_source="alsense"))
     with pytest.raises(ValueError, match="DATA_SOURCE"):
         build_services("mainframe")
+
+
+def test_categorized_failures_are_distinguishable_from_missing_drafts_and_expired_sessions(tmp_path):
+    with app_client(tmp_path, "site_not_found") as client:
+        headers = login(client)
+        draft = reply(client, headers, "/report " + json.dumps(report_payload()))["actions"][0]
+        upstream = submit(client, headers, draft["id"])
+        missing = submit(client, headers, "no-such-draft")
+    assert upstream.status_code == missing.status_code == 404
+    assert upstream.headers["x-error-category"] == "not_found"
+    assert upstream.json()["detail"].startswith("Your request was prepared but not submitted.")
+    assert "x-error-category" not in missing.headers
+    with app_client(tmp_path, "unauthenticated") as client:
+        response = client.get("/api/report-types", headers=login(client))
+    assert (response.status_code, response.headers["x-error-category"]) == (401, "unauthenticated")
+
+
+def test_a_partial_answer_picks_one_of_several_matching_sites(tmp_path):
+    with app_client(tmp_path) as client:
+        carol = login(client, "carol")
+        depot = flow(client, carol, ["no", "demo east", "the depot"])
+        still_both = flow(client, carol, ["no", "demo east", "east"])
+        hall = flow(client, carol, ["no", "demo east", "east", "hall"])
+    assert (depot["flow"]["outcome"], depot["flow"]["trail"][1]["answer"]) == ("ticket", "Demo East Depot")
+    assert still_both["text"] == "I found more than one matching site. Which one do you mean?"
+    assert hall["flow"]["trail"][1]["answer"] == "Demo East Hall"

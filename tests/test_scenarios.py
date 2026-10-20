@@ -194,3 +194,27 @@ def test_bad_scenario_files_fail_with_every_problem(tmp_path):
     message = str(error.value)
     assert "unknown persona 'mallory'" in message and "unknown faults ['gremlins']" in message
     assert "exactly one of" in message
+
+
+def test_a_real_sign_in_without_demo_users_starts_with_scenarios_unavailable(tmp_path):
+    from dataclasses import replace
+
+    from fastapi.testclient import TestClient
+
+    from alsense_chat.adapters import synthetic
+    from alsense_chat.adapters.synthetic.services import SyntheticIdentity
+    from alsense_chat.app import create_app
+    from alsense_chat.config import Settings
+
+    class RealIdentity:
+        """Like a real provider: users_me only, no demo personas."""
+
+        def users_me(self, identity):
+            return SyntheticIdentity().users_me(identity)
+
+    services = replace(synthetic.build(), identity=RealIdentity())
+    with TestClient(create_app(Settings(db=str(tmp_path / "real.sqlite3")), services)) as client:
+        listed = client.get("/api/scenarios").json()
+        assert listed and all("doesn't offer" in item["unavailable_reason"] for item in listed)
+        assert start(client, "report-lifecycle").status_code == 409
+        assert client.get("/api/system").json()["overall"]["label"] == "Needs attention"

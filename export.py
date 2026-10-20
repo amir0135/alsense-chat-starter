@@ -1,5 +1,7 @@
 """Create an allowlisted, history-free export. Never traverse the enclosing repository."""
 
+from __future__ import annotations
+
 import fnmatch
 import sys
 from pathlib import Path
