@@ -17,6 +17,8 @@ flowchart LR
     T -. service identity .-> K[Azure AI Search<br/>future]
     W -->|explicit Submit| C[Confirmation endpoint]
     C --> P
+    B -->|/flow, trigger words| R[Guided checks<br/>operations decision trees]
+    R -->|backend-only lookups| P
     B --> D[(SQLite<br/>local persistence)]
     B -. future .-> O[App Insights + evaluations]
 ```
