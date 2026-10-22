@@ -1,5 +1,6 @@
 {
   "additionalProperties": false,
+  "description": "The service's confirmation. Only after this may the assistant say something was created or scheduled.",
   "properties": {
     "id": {
       "title": "Id",
@@ -8,6 +9,7 @@
     "kind": {
       "enum": [
         "report",
+        "scheduled_report",
         "ticket"
       ],
       "title": "Kind",
@@ -16,6 +18,7 @@
     "status": {
       "enum": [
         "accepted",
+        "scheduled",
         "received"
       ],
       "title": "Status",
@@ -28,6 +31,19 @@
     "synthetic": {
       "title": "Synthetic",
       "type": "boolean"
+    },
+    "next_run": {
+      "anyOf": [
+        {
+          "format": "date",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Next Run"
     }
   },
   "required": [

@@ -1,0 +1,22 @@
+domain: sites
+title: Sites
+status: active
+description: Finds the sites the signed-in user may access and matches friendly site names to them.
+requires: []
+# Slash commands from the widget and demo that belong to this domain.
+commands: [/sites]
+# A request is routed here when it contains every word of one entry (case-insensitive, word starts).
+routing:
+  - [site]
+  - [store]
+  - [location]
+instructions: |
+  Sites
+  - Call get_permitted_sites before any site-specific step. Pass the site name the user mentioned as name,
+    or omit name to list every site the user can access.
+  - match one: use that site. If exact is false, first ask "Do you mean <site name>?"
+  - match several: ask the user to choose between the returned sites by name.
+  - match none: say you couldn't find that site among the sites they can access, and name the alternatives.
+  - match all with exactly one site: assume that site and say its name; do not ask which site.
+  - Use site ids only from get_permitted_sites results in this turn. Never invent or guess a site id.
+  - Sites include their active alarms. Use them for a support request instead of asking for alarm details.

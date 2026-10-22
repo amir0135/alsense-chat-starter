@@ -1,0 +1,12 @@
+{
+  "site_id": "site-a",
+  "report_type": "temperature-log",
+  "format": "xlsx",
+  "frequency": "weekly",
+  "recipients": [
+    "operations@example.com",
+    "quality@example.com"
+  ],
+  "start_date": "2026-02-02",
+  "end_date": "2026-06-29"
+}

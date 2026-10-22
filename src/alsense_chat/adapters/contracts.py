@@ -10,6 +10,9 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+ReportFormat = Literal["pdf", "csv", "xlsx"]
+Frequency = Literal["daily", "weekly", "monthly"]
+
 
 class Contract(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -42,10 +45,19 @@ class Document(Contract):
     url: str
 
 
+class ScheduleSupport(Contract):
+    """How a report type can be scheduled. Absent when the type is on demand only."""
+
+    frequencies: list[Frequency]
+    end_date_supported: bool
+    max_recipients: int
+
+
 class ReportType(Contract):
     id: str
     label: str
-    formats: list[Literal["pdf", "csv"]]
+    formats: list[ReportFormat]
+    schedule: ScheduleSupport | None = None
 
 
 class HealthCheck(Contract):
@@ -62,11 +74,25 @@ class HealthReport(Contract):
 
 
 class ReportRequest(Contract):
+    """An on-demand report for one period."""
+
     site_id: str
     report_type: str
-    format: Literal["pdf", "csv"]
+    format: ReportFormat
     start: date
     end: date
+
+
+class ScheduledReportRequest(Contract):
+    """A recurring report sent to recipients until it is cancelled or reaches its end date."""
+
+    site_id: str
+    report_type: str
+    format: ReportFormat
+    frequency: Frequency
+    recipients: list[str]
+    start_date: date
+    end_date: date | None = None
 
 
 class SupportRequest(Contract):
@@ -77,17 +103,22 @@ class SupportRequest(Contract):
 
 
 class Submission(Contract):
+    """The service's confirmation. Only after this may the assistant say something was created or scheduled."""
+
     id: str
-    kind: Literal["report", "ticket"]
-    status: Literal["accepted", "received"]
+    kind: Literal["report", "scheduled_report", "ticket"]
+    status: Literal["accepted", "scheduled", "received"]
     url: str
     synthetic: bool
+    next_run: date | None = None
 
 
 class ReportJob(Contract):
     id: str
     state: Literal["processing", "completed", "failed"]
     url: str | None = None
+    completed_at: datetime | None = None
+    expires_at: datetime | None = None
     message: str | None = None
     synthetic: bool
 

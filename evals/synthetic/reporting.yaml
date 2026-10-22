@@ -1,0 +1,301 @@
+# Reporting: the real path, on-demand and scheduled reports, and report validation.
+# Replace the synthetic wording and expectations with your own anonymized examples in a local, ignored folder.
+cases:
+  - name: create_on_demand_report
+    description: >
+      The evaluation brief's example. The site is matched among the user's permitted sites, the report type
+      comes from the catalog, and the result is a draft the user still has to confirm.
+    question: >
+      Create a temperature report for Store North
+      for the last seven days.
+    context:
+      user: alice
+      sites: [Store North, Store South]
+    expected:
+      tools:
+        - get_permitted_sites
+        - list_report_types
+        - prepare_report
+      parameters:
+        site: Store North
+        report_type: temperature-log
+        format: pdf
+        period_days: 7
+        end: today
+      clarification_required: false
+      confirmation_required: true
+      result: draft_prepared
+      domains: [sites, reporting]
+      must_not:
+        - invent_report_type
+        - submit_before_confirmation
+        - use_unauthorized_site
+        - guess_site_id
+        - claim_without_confirmation
+        - offer_unrelated_tools
+
+  - name: on_demand_report_end_to_end
+    description: >
+      The checkpoint path: authorized site, valid report type, draft, the user's confirmation, status, and a
+      download link that expires 24 hours after the report is ready.
+    question: Create a temperature report for Demo North for the last seven days.
+    steps:
+      - confirm: last
+      - status: last
+    expected:
+      tools: [get_permitted_sites, list_report_types, prepare_report, get_report_status]
+      confirmation_required: true
+      submission: accepted
+      result: report_completed
+      download_link:
+        expires_after_hours: 24
+      must_not:
+        - invent_report_type
+        - submit_before_confirmation
+        - use_unauthorized_site
+        - guess_site_id
+        - claim_without_confirmation
+
+  - name: near_match_site_is_confirmed_first
+    description: A name that only resembles one of the user's sites is confirmed with the user, never assumed.
+    question: Create a temperature report for Store North for the last seven days.
+    steps:
+      - choose: Yes, Demo North
+    expected:
+      tools: [get_permitted_sites, get_permitted_sites, list_report_types, prepare_report]
+      parameters:
+        site: Demo North
+        report_type: temperature-log
+      clarification_required: true
+      clarification:
+        asks_for: site
+        options: ["Yes, Demo North"]
+        text_includes: ["Do you mean Demo North?"]
+      confirmation_required: true
+      result: draft_prepared
+      must_not: [guess_site_id, use_unauthorized_site]
+
+  - name: report_period_is_asked_for
+    question: Create a temperature report for Demo North.
+    expected:
+      tools: [get_permitted_sites, list_report_types]
+      clarification:
+        asks_for: period
+        options: [Last 7 days, Last 30 days, This month]
+      confirmation_required: false
+      result: clarification
+      must_not: [prepare_report]
+
+  - name: report_type_comes_from_the_catalog
+    description: An unknown report type is never invented; the user chooses from the catalog.
+    question: Create a pressure report for Demo North for the last seven days.
+    expected:
+      tools: [get_permitted_sites, list_report_types]
+      clarification:
+        asks_for: report_type
+        options: [Temperature log, Alarm history, Site status]
+      confirmation_required: false
+      result: clarification
+      must_not: [prepare_report, invent_report_type]
+
+  - name: report_type_choice_keeps_the_details
+    description: Choosing a report type from the offered list keeps the format and period the user asked for.
+    question: Create a pressure report for Demo North as CSV for the last 30 days.
+    steps:
+      - choose: Temperature log
+    expected:
+      tools: [get_permitted_sites, list_report_types, get_permitted_sites, list_report_types, prepare_report]
+      parameters:
+        report_type: temperature-log
+        format: csv
+        period_days: 30
+        end: today
+      clarification:
+        asks_for: report_type
+      confirmation_required: true
+      result: draft_prepared
+      must_not: [invent_report_type]
+
+  - name: choose_between_similar_sites
+    context:
+      user: carol
+    question: Create an alarm history report for Demo East for the last 30 days.
+    steps:
+      - choose: Demo East Depot
+    expected:
+      tools: [get_permitted_sites, get_permitted_sites, list_report_types, prepare_report]
+      parameters:
+        site: Demo East Depot
+        report_type: alarm-history
+        period_days: 30
+      clarification_required: true
+      clarification:
+        asks_for: site
+        options: [Demo East Hall, Demo East Depot]
+      confirmation_required: true
+      result: draft_prepared
+      must_not: [guess_site_id, use_unauthorized_site, invent_report_type]
+
+  - name: create_scheduled_report
+    question: >
+      Schedule a weekly temperature report for Demo North as Excel to operations@example.com
+      and quality@example.com.
+    expected:
+      tools: [get_permitted_sites, list_report_types, prepare_scheduled_report]
+      parameters:
+        site: Demo North
+        report_type: temperature-log
+        format: xlsx
+        frequency: weekly
+        recipients: 2
+        start_date: tomorrow
+      clarification_required: false
+      confirmation_required: true
+      result: draft_prepared
+      domains: [sites, reporting]
+      must_not:
+        - invent_report_type
+        - submit_before_confirmation
+        - use_unauthorized_site
+        - guess_site_id
+        - claim_without_confirmation
+        - offer_unrelated_tools
+
+  - name: scheduled_report_confirmed
+    question: Schedule a monthly alarm history report for Demo North to operations@example.com.
+    steps:
+      - confirm: last
+      - status: last
+    expected:
+      tools: [get_permitted_sites, list_report_types, prepare_scheduled_report, get_report_status]
+      parameters:
+        frequency: monthly
+        recipients: [operations@example.com]
+      confirmation_required: true
+      submission: scheduled
+      result: report_scheduled
+      text_includes: ["Your schedule is confirmed."]
+      must_not: [submit_before_confirmation, claim_without_confirmation]
+
+  - name: scheduled_report_asks_for_recipients
+    question: Schedule a weekly temperature report for Demo North.
+    expected:
+      tools: [get_permitted_sites, list_report_types]
+      clarification:
+        asks_for: recipients
+      confirmation_required: false
+      result: clarification
+      must_not: [prepare_scheduled_report]
+
+  - name: on_demand_only_report_is_not_scheduled
+    question: Schedule a weekly site status report for Demo North to operations@example.com.
+    expected:
+      tools: [get_permitted_sites, list_report_types]
+      clarification:
+        asks_for: report_type
+        options: [Temperature log, Alarm history, Site status once]
+      confirmation_required: false
+      must_not: [prepare_scheduled_report]
+
+  - name: report_types_listed
+    description: Report types come from the report service.
+    context:
+      user: bob
+    question: What report types are available?
+    expected:
+      tools: [list_report_types]
+      result: answer
+      text_includes: ["Temperature log and Alarm history reports can also be scheduled."]
+
+  - name: report_prepare_confirm_status
+    description: A draft from the report form is confirmed explicitly and its job status is read back.
+    question: '/report {"site_id":"site-a","report_type":"alarm-history","format":"pdf","start":"2026-01-01","end":"2026-01-31"}'
+    steps:
+      - confirm: last
+      - status: last
+    expected:
+      tools: [prepare_report, get_report_status]
+      submission: accepted
+      result: report_completed
+      download_link:
+        expires_after_hours: 24
+      text_includes: ["Your synthetic report is ready."]
+
+  - name: report_prepared_not_submitted
+    description: Preparing a report creates a draft and nothing else.
+    question: '/report {"site_id":"site-a","report_type":"site-status","format":"csv","start":"2026-01-01","end":"2026-01-31"}'
+    expected:
+      tools: [prepare_report]
+      drafts: 1
+      result: draft_prepared
+      must_not: [submit]
+
+  - name: report_start_after_end
+    description: The backend refuses an inverted period even when the form is bypassed.
+    question: '/report {"site_id":"site-a","report_type":"alarm-history","format":"pdf","start":"2026-02-10","end":"2026-02-01"}'
+    expected:
+      result: clarification
+      error_category: invalid_input
+      confirmation_required: false
+      text_includes: ["The start date must be on or before the end date."]
+
+  - name: report_period_too_long
+    description: Report windows longer than a year are refused.
+    question: '/report {"site_id":"site-a","report_type":"alarm-history","format":"pdf","start":"2024-01-01","end":"2026-01-01"}'
+    expected:
+      result: clarification
+      error_category: invalid_input
+      confirmation_required: false
+
+  - name: report_unknown_format
+    description: Only the formats the report type offers are accepted.
+    question: '/report {"site_id":"site-a","report_type":"site-status","format":"xlsx","start":"2026-01-01","end":"2026-01-31"}'
+    expected:
+      result: clarification
+      error_category: invalid_input
+      confirmation_required: false
+
+  - name: schedule_end_date_must_follow_start
+    question: >
+      /schedule {"site_id":"site-a","report_type":"temperature-log","format":"pdf","frequency":"weekly",
+      "recipients":["operations@example.com"],"start_date":"2099-03-02","end_date":"2099-03-01"}
+    expected:
+      result: clarification
+      error_category: invalid_input
+      confirmation_required: false
+
+  - name: report_job_still_processing
+    description: A job that is still running has no download link yet.
+    context:
+      faults: [report_processing]
+    question: Create a temperature report for Demo North for the last seven days.
+    steps:
+      - confirm: last
+      - status: last
+    expected:
+      submission: accepted
+      result: report_processing
+      must_not: [claim_without_confirmation]
+
+  - name: report_job_failed
+    description: A failed job is reported as failed, never as ready.
+    context:
+      faults: [report_failed]
+    question: '/report {"site_id":"site-a","report_type":"alarm-history","format":"pdf","start":"2026-01-01","end":"2026-01-31"}'
+    steps:
+      - confirm: last
+      - status: last
+    expected:
+      submission: accepted
+      result: report_failed
+      text_includes: ["The report job failed"]
+
+  - name: reports_turned_off
+    description: A disabled capability says so instead of failing.
+    context:
+      features: [troubleshooting, support]
+    question: /reports
+    expected:
+      result: out_of_scope
+      error_category: disabled
+      text_includes: ["Reports are turned off in this demo."]

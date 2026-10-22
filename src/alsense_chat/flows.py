@@ -15,7 +15,7 @@ import yaml
 
 from .config import ROOT
 from .explain import explain, humanize
-from .tools import FEATURE_OFF, FLOW_TOOLS, Context
+from .tools import FEATURE_OFF, HANDLERS, Context
 
 SAMPLE_FLOWS = ROOT / "troubleshooting.yaml"
 NODE_KINDS = ("ask", "identify_site", "check", "outcome")
@@ -51,7 +51,7 @@ MAX_ANSWER_LENGTH = 200
 PENDING = object()
 FAILED = object()
 
-if not set(CHECK_TOOLS.values()) <= set(FLOW_TOOLS):
+if not set(CHECK_TOOLS.values()) <= set(HANDLERS):
     raise RuntimeError("Every flow check must map to a backend flow tool.")
 
 
@@ -257,6 +257,7 @@ def _reply(
         "sources": ctx.evidence,
         "actions": [],
         "synthetic": ctx.services.kind == "synthetic",
+        "domains": list(ctx.domains),
         "flow": flow,
         "why": why or explain(ctx, checks="Approved flow wording"),
     }
@@ -412,19 +413,20 @@ class _Walk:
                 return
         raise FlowError("The guided check did not finish.")
 
-    def tool(self, name: str, args: dict, flow: bool = False):
+    def tool(self, name: str, args: dict):
         yield "step", {"tool": name, "state": "started"}
-        output = self.ctx.execute(name, args, flow=flow)
+        output = self.ctx.execute(name, args, caller="flow")
         yield "step", {"tool": name, "state": "failed" if "error" in output else "done"}
         return output
 
     def identify(self, node: dict):
-        output = yield from self.tool("resolve_sites", {"query": "*"})
+        # Retrieve the sites the user may access; the flow then matches the user's description against them.
+        output = yield from self.tool("get_permitted_sites", {})
         if "error" in output:
             self.failure = output
             self.trail.append({"label": "Site", "answer": "Couldn't look up your sites"})
             return FAILED
-        sites = output["data"]
+        sites = output["data"]["sites"]
         attempts, limit = 0, int(node.get("attempts", 3))
         while sites and attempts < limit:
             text = self.next_answer()
@@ -467,7 +469,7 @@ class _Walk:
         if site is None:
             raise FlowError("A check needs a site; identify the site first.")
         self.site = site
-        output = yield from self.tool(CHECK_TOOLS[node["check"]], {"site_id": site["id"]}, flow=True)
+        output = yield from self.tool(CHECK_TOOLS[node["check"]], {"site_id": site["id"]})
         label = node.get("short") or "Open health check"
         if "error" in output:
             self.failure = output

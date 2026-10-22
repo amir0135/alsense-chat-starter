@@ -1,0 +1,60 @@
+# caller: model (offered to the model), user (runs only after an explicit user action) or backend (code only).
+# feature: the ENABLE_* switch that must be on for the tool to exist.
+tools:
+  list_report_types:
+    caller: model
+    feature: reports
+    description: List the report types the report service offers, with their formats and schedule options.
+    parameters:
+      type: object
+      properties: {}
+      required: []
+      additionalProperties: false
+  prepare_report:
+    caller: model
+    feature: reports
+    description: Prepare, but never submit, an on-demand report for one site and one period.
+    parameters:
+      type: object
+      properties:
+        site_id: {type: string, description: Site id from get_permitted_sites in this turn. Never invent one.}
+        report_type: {type: string, description: A report type id returned by list_report_types.}
+        format: {type: string, enum: [pdf, csv, xlsx], description: "A format the report type offers; pdf if unsaid."}
+        start: {type: string, format: date, description: First day of the period.}
+        end: {type: string, format: date, description: Last day of the period.}
+      required: [site_id, report_type, format, start, end]
+      additionalProperties: false
+  prepare_scheduled_report:
+    caller: model
+    feature: reports
+    description: Prepare, but never create, a recurring report that is sent to the given recipients.
+    parameters:
+      type: object
+      properties:
+        site_id: {type: string, description: Site id from get_permitted_sites in this turn. Never invent one.}
+        report_type: {type: string, description: A schedulable report type id returned by list_report_types.}
+        format: {type: string, enum: [pdf, csv, xlsx], description: "A format the report type offers; pdf if unsaid."}
+        frequency: {type: string, enum: [daily, weekly, monthly], description: A frequency the report type allows.}
+        recipients: {type: array, items: {type: string}, description: Email addresses the user gave. Never invent one.}
+        start_date: {type: string, format: date, description: "Date of the first report, today or later."}
+        end_date: {type: string, format: date, description: Last report date. Only when the type supports it.}
+      required: [site_id, report_type, format, frequency, recipients, start_date]
+      additionalProperties: false
+  get_report_status:
+    caller: model
+    feature: reports
+    description: |
+      Read whether a report or schedule prepared in this conversation was confirmed, and its result: the job
+      state, the download link and when the link expires, or the next run of a schedule.
+    parameters:
+      type: object
+      properties:
+        action_id: {type: string, description: Id of a draft prepared in this conversation.}
+      required: [action_id]
+      additionalProperties: false
+  confirm_report:
+    caller: user
+    feature: reports
+    description: |
+      Submit a prepared report or create a prepared schedule. Runs only when the user presses Confirm on the
+      draft (POST /api/actions/{id}/submit), and re-checks permissions first. Never offered to the model.

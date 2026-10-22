@@ -29,8 +29,9 @@ paths, typed response validation, and permission filtering at the adapter bounda
 
 The starter intentionally does not accept arbitrary API URLs, headers or HTTP methods from the model. Do not add
 a generic HTTP tool. Each new capability needs a typed schema, one curated handler, authorization tests, and a
-matching entry in `src/alsense_chat/alsense.semantic.yaml`. `model_definition()` checks field/required-field parity;
-Pydantic enforces the actual runtime constraints.
+declaration in its domain module's `tools.yaml` under `src/alsense_chat/agent/` (see the
+[agent module guide](../src/alsense_chat/agent/README.md)). `check_registry()` compares each declaration with its
+handler's schema at startup; Pydantic enforces the actual runtime constraints.
 
 Map upstream failures to the categorized errors in `adapters/errors.py` (forbidden, not found, unavailable,
 timeout, stale, unauthenticated) without exposing credentials or raw upstream bodies; the UI shows a distinct
@@ -80,8 +81,11 @@ and a backend-controlled rollout flag. It is not sufficient to hide the widget i
 ## Evaluation gate
 
 `tests/` and the cases in `evals/` are an offline behavioral gate for the synthetic implementation. They are not
-the missing Alsense business question bank; see `evals/README.md` for the case format, including model mode. Get that set from the team and add expected clarification, refusal, source
-grounding, report preparation, ticket confirmation and cross-customer cases.
+the missing Alsense business question bank. Each case states the question, the user and their sites, the expected
+tools, parameters, clarification and result, whether confirmation is required, and what must never happen (see
+`evals/README.md`, including model mode). Write cases from the team's anonymized examples in the ignored
+`evals/local/` folder, covering clarification, refusal, source grounding, report preparation, ticket confirmation
+and cross-customer access.
 
 Run `uv run python scripts/dev.py test` on every change. Cross-user/site authorization failures must fail the build; never mark them
 as optional live tests. Real model evaluation should be explicit and separate, with no automatic exposure of

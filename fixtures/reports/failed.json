@@ -2,6 +2,8 @@
   "id": "example-idempotency-key",
   "state": "failed",
   "url": null,
+  "completed_at": null,
+  "expires_at": null,
   "message": "Synthetic failure: the report job did not finish.",
   "synthetic": true
 }

@@ -1,0 +1,4 @@
+domain: alarms
+title: Alarms
+status: future
+description: Alarm questions and acknowledgements. No tools yet; add tools.yaml when the alarm API is available.

@@ -36,8 +36,14 @@ A clone-and-run reference implementation of an operations assistant for refriger
 - **Conversation** about permitted sites, alarms, approved guidance and reports, with cited sources.
 - **Guided troubleshooting:** versioned decision trees that operations teams own, run deterministically by the
   backend, with site matching ("Do you mean Demo North?") and backend health-check lookups.
-- **Drafts, never silent actions:** reports and support requests are prepared for review; only an explicit
-  confirmation submits them, and only to synthetic services.
+- **Reports in plain language:** "Create a temperature report for Demo North for the last seven days". The site is
+  matched against the user's permitted sites (never guessed), the report type comes from the report catalog, and
+  a confirmed report shows a download link with its expiry time. Reports run on demand (type, site, period, PDF,
+  CSV or Excel) or on a schedule (frequency, recipients, start and optional end date).
+- **Drafts, never silent actions:** reports, schedules and support requests are prepared for review; only an
+  explicit confirmation submits them, and only to synthetic services.
+- **A modular agent:** instructions and tools live in one folder per domain (sites, reporting, troubleshooting),
+  and each request is offered only the tools of the domains it needs.
 - **Explicit failures:** access denied, service unavailable, ambiguous site, no approved answer and "prepared but
   not submitted" each have their own message, and each can be switched on for a demo.
 - **Trust:** a permanent synthetic-data banner, a `/system` readiness page, a "Why this result?" panel, correlation
@@ -78,12 +84,14 @@ credentials. Details: [`docs/architecture.md`](docs/architecture.md) (an editabl
 |---|---|
 | `src/alsense_chat/app.py` | HTTP API, sessions, confirmation endpoint, correlation ids |
 | `src/alsense_chat/adapters/` | Contracts, errors, interfaces, `synthetic/` and `alsense/` implementations |
-| `src/alsense_chat/tools.py` | Curated tools with schema and permission checks |
+| `src/alsense_chat/agent/` | Agent modules: core instructions, then one folder per domain with its instructions and tools ([guide](src/alsense_chat/agent/README.md)) |
+| `src/alsense_chat/domains/` | Site resolution, report validation and the scripted report planner |
+| `src/alsense_chat/tools.py` | Tool registry, schema and permission checks, who may call each tool |
 | `src/alsense_chat/flows.py` | Guided-check engine and flow validation |
 | `src/alsense_chat/runner.py` | Scripted assistant and the optional Foundry runner |
 | `src/alsense_chat/static/` | Chat widget, demo scenarios and the `/system` page |
 | `scripts/` | `dev.py` tasks, `doctor.py`, protected-file check, fixture generator |
-| `fixtures/`, `evals/` | Contract examples per integration call; behaviour evaluations |
+| `fixtures/`, `evals/` | Contract examples per integration call; behaviour evaluations ([format](evals/README.md)) |
 
 ## 4. Fastest start with Docker
 
@@ -121,15 +129,19 @@ uv run python scripts/dev.py start     # http://127.0.0.1:8001  (--reload while 
 Run `uv run python scripts/dev.py --help` for every task.
 
 Select a synthetic user and press **Start demo session**: Alice sees Demo North, Bob Demo South, Carol two sites.
-Use the quick actions, ask about an offline sensor, or use the reference commands:
+Use the quick actions, ask in plain language, or use the reference commands:
 
 ```text
+Create a temperature report for Demo North for the last seven days
+Schedule a weekly temperature report for Demo North as Excel to operations@example.com
+My sensor is offline. What should I check?
 /sites *
 /reports
 /docs offline sensor
 /flows
 /flow site-connection
 /report {"site_id":"site-a","report_type":"alarm-history","format":"pdf","start":"2026-01-01","end":"2026-01-31"}
+/schedule {"site_id":"site-a","report_type":"temperature-log","format":"xlsx","frequency":"weekly","recipients":["operations@example.com"],"start_date":"2030-01-07"}
 /ticket {"site_id":"site-a","alarm_id":"alarm-site-a","summary":"Offline sensor","steps_tried":"Checked power"}
 /status <prepared-report-action-id>
 ```
@@ -144,7 +156,10 @@ the steps. **Reset scenario** starts again from a clean conversation.
 |---|---|
 | Alice: unreachable site | Misspelled site matched within permitted sites; backend health check finds the gateway offline |
 | Bob: prepare a support request | Tree ends in a ticket; answered steps prefill a request; explicit confirmation |
-| Report: prepare, edit, confirm, check status | Builder validation, replacing a draft, confirmation and job status |
+| Report: prepare, edit, confirm, check status | Builder validation, replacing a draft, confirmation and the download link |
+| Report: ask in plain words | Site resolved within permitted sites, type from the catalog, confirm, download link with its expiry |
+| Report: schedule a weekly report | Frequency, recipients and start date; scheduled only after confirmation |
+| Failure: similar site names in a report request | The assistant offers both sites and continues with the chosen one |
 | Failure: ambiguous site | Two matching sites: the assistant asks instead of guessing |
 | Failure: invalid date range | Caught inline in the builder and again by the backend |
 | Failure: unavailable synthetic service | A failed lookup stops the check with the reason |
@@ -179,12 +194,15 @@ your own Azure subscription (Container Apps, Foundry, Key Vault, monitoring), fo
 ```bash
 uv run python scripts/dev.py test      # unit, API, contract-fixture and evaluation tests
 uv run python scripts/dev.py lint      # ruff format and lint, mypy, widget JavaScript, protected files
-uv run python scripts/dev.py evals     # behaviour cases in evals/ only
+uv run python scripts/dev.py evals     # behaviour cases in evals/ only, a pass/fail line per case
 uv run python scripts/dev.py validate-flows [FILE ...]
 ```
 
-`tests/test_scenarios.py` runs every demo scenario and checks its promised result. `fixtures/` holds an example
-for every integration call, generated from the synthetic adapters and checked against the contract models.
+`tests/test_scenarios.py` runs every demo scenario and checks its promised result. Each evaluation case in `evals/`
+states a question, the user's sites, the expected tools, parameters, clarification and result, whether the user
+must confirm, and what must never happen; [`evals/README.md`](evals/README.md) explains the format and model mode.
+`fixtures/` holds an example for every integration call, generated from the synthetic adapters and checked against
+the contract models.
 CI (`.github/workflows/ci.yml`) also builds and smoke-tests the Docker image and the Dev Container, compiles the
 Bicep and scans the full history for secrets and protected files.
 
@@ -243,6 +261,9 @@ tokens and the production work.
 - Reply checks validate structure, sources, numbers, links and wording, not full factual entailment. Add the
   product's answer-quality evaluations before trusting model answers.
 - The scripted assistant understands a fixed set of phrasings; free text beyond them needs the model.
+- Scheduled reports can be created and checked, not listed, changed or cancelled.
+- Frontend actions (operating the host application's screens) wait for the capability manifest and host contracts;
+  see [`docs/integration-map.md`](docs/integration-map.md).
 - Report and support forms do not calculate figures or render charts.
 
 ## 14. Troubleshooting setup

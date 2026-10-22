@@ -11,7 +11,7 @@ Tasks:
     reset           Delete the local demo database (sessions, drafts, audit trail). --docker resets Compose
     doctor          Check the setup and explain what to fix
     validate-flows  Validate the shipped flows and FLOWS_FILE, or the files you name
-    evals           Run the evaluation cases in evals/
+    evals           Run the evaluation cases in evals/ (add --mode model, or folders such as evals/local)
     fixtures        Regenerate the contract fixtures and JSON Schemas in fixtures/
     export          Write a history-free zip of the starter to dist/
 
@@ -187,7 +187,9 @@ def validate_flows(args: argparse.Namespace, _: list[str]) -> int:
 
 
 def evals(_: argparse.Namespace, extra: list[str]) -> int:
-    return run(*uv_run("pytest", "tests/test_evals.py", *(extra or ["-v"])))
+    # Model mode reads AGENT_MODE and the Foundry settings from .env; scripted mode never needs them.
+    env_file = ["--env-file", ".env"] if (ROOT / ".env").is_file() else []
+    return run(*uv_run(*env_file, "python", "-m", "alsense_chat.evaluation", *extra))
 
 
 def fixtures(_: argparse.Namespace, extra: list[str]) -> int:

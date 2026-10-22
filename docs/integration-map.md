@@ -54,16 +54,43 @@ say "Your request was prepared but not submitted." The synthetic `SYNTHETIC_FAUL
   - Revocation semantics: how long a permission snapshot may be cached (sessions store it; submissions re-check).
   - The downstream audience and delegated scopes, and whether an on-behalf-of exchange is required.
 
-### Site directory
+### Site directory and authorized-site resolution
 
-- **Interface:** `SiteDirectory.search_sites(user, query) -> list[Site]`, `active_alarms(user, site_id)`
-- **Synthetic:** `SyntheticSiteDirectory` filters the user's sites by name; every site has one active alarm.
-- **Fixtures:** `sites/search-success.json`, `sites/search-ambiguous.json`, `sites/search-empty.json`,
+- **Interface:** `SiteDirectory.permitted_sites(user) -> list[Site]`, `active_alarms(user, site_id)`
+- **Synthetic:** `SyntheticSiteDirectory` returns the user's sites; every site has one active alarm.
+- **Fixtures:** `sites/permitted.json`, `sites/permitted-similar-names.json`, `sites/unavailable.json`,
   `sites/alarms-active.json`, `sites/forbidden.json`
+- **Connect the real operation in:** `AlsenseSiteDirectory.permitted_sites` in `adapters/alsense/__init__.py`.
+
+Matching a friendly name is backend code ([`domains/sites.py`](../src/alsense_chat/domains/sites.py)), so it works
+the same whatever the real operation returns:
+
+```text
+User mentions a friendly site name
+        ↓
+get_permitted_sites → SiteDirectory.permitted_sites(user)    the sites the signed-in user may access
+        ↓
+resolve(name, permitted sites)                               match against those sites only
+        ↓
+one match       → use its stable Alsense site id (a near match is confirmed with the user first)
+several matches → ask the user to choose
+no match        → "I couldn't find that site among the sites you can access", plus the sites they can choose
+service down    → "The site directory is temporarily unavailable"; nothing is guessed
+```
+
+A near match is a misspelling or a name with extra words: "Demo North Annex" gets "Do you mean Demo North?" instead
+of a Demo North report. The model never invents or guesses a site id. `Context.execute` refuses a model-supplied `site_id` unless
+`get_permitted_sites` resolved exactly that site in the same turn (`unverified_site`). The backend also drops any site
+the directory returns outside the session's permissions. A site the user can't access gets the same reply as a
+site that doesn't exist, so nothing reveals that it exists. The cases are tested in `tests/test_sites.py` and
+evaluated in `evals/synthetic/sites.yaml`: one match, several similar sites, no match, a site without access, and
+the site service unavailable.
+
 - **Alsense must provide:**
-  - Search over the **user's permitted sites only**, filtered server-side by the user context.
-  - A stable site id and a display name for each result.
-  - Correct handling of zero, one and several matches; the backend asks the user to choose when several match.
+  - The sites the signed-in user may access, filtered server-side by the delegated user context, each with a stable
+    site id and a display name. A server-side name search may narrow the list; the backend still resolves the name.
+  - Error semantics: access revoked (403), unknown user (401) and outages (5xx, timeouts), mapped as in the table
+    above. An empty list means the user has no sites, never "the service failed".
   - Active alarms per site with ids, labels and status, for support requests.
 
 ### Gateway health and other operational checks
@@ -92,26 +119,57 @@ say "Your request was prepared but not submitted." The synthetic `SYNTHETIC_FAUL
 ### Report metadata
 
 - **Interface:** `ReportService.report_types(user) -> list[ReportType]`
-- **Synthetic:** alarm history and site status, each as PDF or CSV.
+- **Synthetic:** temperature log (PDF, CSV or Excel; can be scheduled daily, weekly or monthly), alarm history (PDF,
+  CSV or Excel; weekly or monthly) and site status (PDF or CSV; on demand only).
 - **Fixtures:** `reports/report-types.json`
-- **Alsense must provide:** report types, permitted formats, required fields, date semantics and limits. The
-  backend validates drafts against them; the report builder shows what the service offers.
+- **Alsense must provide:** report types, permitted formats, required fields, date semantics and limits, and for
+  each type whether it can be scheduled: its frequencies, whether a schedule can have an end date, and the
+  maximum number of recipients. The backend validates every draft against this catalog, so the assistant can only
+  offer a report type the service returned; the report builder shows the same options.
 
-### Report submission, job status and retrieval
+### On-demand reports: submission, job status and download link
 
 - **Interface:** `ReportService.submit_report(user, request, idempotency_key) -> Submission`,
   `report_status(user, job_id) -> ReportJob`
-- **Synthetic:** jobs are accepted and complete immediately; `report_processing` and `report_failed` faults show
-  the other states.
+- **Synthetic:** jobs are accepted and complete immediately. The download link expires 24 hours after the job
+  completed (`LINK_TTL` in `adapters/synthetic/services.py`). The `report_processing` and `report_failed` faults
+  show the other states.
 - **Fixtures:** `reports/request.json`, `reports/submitted.json`, `reports/processing.json`,
   `reports/completed.json`, `reports/failed.json`
+- **Connect the real operation in:** `AlsenseReports.submit_report` and `AlsenseReports.report_status`.
+
+```text
+prepare_report            → validated draft, stored locally; nothing is sent
+user presses Confirm      → POST /api/actions/{id}/submit → submit_report (permissions re-checked)
+widget reads the status   → GET /api/actions/{id}/status → report_status
+completed                 → clickable download link, with "Expires 24 hours after the report was ready"
+```
+
 - **Alsense must provide:**
   - An idempotent submission endpoint honoring the draft id as idempotency key, or a reconciliation mechanism.
   - Job status (processing, completed, failed with a user-safe reason).
-  - Retrieval: an approved link or download endpoint for the finished report.
+  - The download link for the finished report and its expiry time (`completed_at`, `expires_at`). The widget shows
+    the times the service returns, so a different link lifetime shows correctly. Approve the link's origin in
+    `safe_link()`.
 
-Preparing a report is local: the backend validates and stores a draft. Only the explicit confirmation endpoint
-calls `submit_report`, after re-checking permissions.
+### Scheduled reports
+
+- **Interface:** `ReportService.schedule_report(user, request, idempotency_key) -> Submission` (status
+  `scheduled`, with `next_run`)
+- **Contract:** `ScheduledReportRequest`: site, report type, format, frequency, recipients, start date and an
+  optional end date when the report type supports one.
+- **Synthetic:** schedules are accepted immediately and the first report goes out on the start date.
+- **Fixtures:** `reports/schedule-request.json`, `reports/scheduled.json`
+- **Connect the real operation in:** `AlsenseReports.schedule_report`.
+- **Alsense must provide:**
+  - An idempotent endpoint that creates a schedule, honoring the draft id as idempotency key.
+  - Recipient rules: allowed domains or internal users only, limits, and whether recipients must be confirmed.
+  - The schedule's status and next run. Listing, changing and cancelling schedules are not implemented yet.
+
+Preparing a report or a schedule is local: the backend validates and stores a draft. Only the explicit
+confirmation endpoint calls `submit_report` or `schedule_report`, after re-checking permissions. The assistant
+says a report was created or scheduled only when a status from the service confirms it; the reply guard rejects
+any other claim. Recipient email addresses are never written to the audit trail, only their count.
 
 ### Support request preparation and submission
 
@@ -136,6 +194,28 @@ Preparation is local: guided checks and the support form produce a draft that th
 - **Not an adapter:** `FoundryRunner` in `runner.py` calls your Azure AI Foundry deployment with backend-owned tools.
 - **Alsense must provide:** the gateway (APIM) route, model deployment, content-safety policy and data-handling
   approval. When the model is unreachable the user is told; the scripted assistant is never substituted.
+
+### Frontend actions (future integration)
+
+- **Not implemented.** The assistant does not operate the host application's screens yet. The capability manifest
+  and the host contracts will come from the frontend team; until then the empty `frontend_actions` agent module
+  (`status: future`) only reserves the domain, and no schema is defined.
+- **Intended flow:**
+
+```text
+Frontend action catalog → the actions available on the current screen for the current user
+        ↓
+Host validation         → the host validates the action, the user's permissions and the filters
+        ↓
+Host completion         → the host returns the filters it actually applied and the actual result
+        ↓
+Assistant               → confirms only after host completion, describing what the host applied
+```
+
+- **Needed before implementing:** how the catalog is delivered per screen and user, the action and filter
+  vocabulary, how the host reports a refused action, how completion and the applied filters come back, and how the
+  chat and the host correlate one request. The assistant will offer only catalog actions as tools, and treat a
+  host refusal like any other categorized failure.
 
 ### Persistence and audit
 

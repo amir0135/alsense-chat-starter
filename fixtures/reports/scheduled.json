@@ -1,0 +1,8 @@
+{
+  "id": "example-idempotency-key",
+  "kind": "scheduled_report",
+  "status": "scheduled",
+  "url": "/reference/schedule/example-idempotency-key",
+  "synthetic": true,
+  "next_run": "2026-02-02"
+}

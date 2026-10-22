@@ -1,0 +1,4 @@
+domain: energy
+title: Energy
+status: future
+description: Energy consumption questions. No tools yet; add tools.yaml when the energy API is available.

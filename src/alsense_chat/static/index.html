@@ -112,14 +112,14 @@
               <span><strong>Troubleshoot an issue</strong><small>Step-by-step checks for common issues</small></span>
               <span class="suggestion-arrow" aria-hidden="true">↗</span>
             </button>
-            <button type="button" class="suggestion" data-message="/reports" data-display="Explore reports" data-feature="reports" disabled>
+            <button type="button" class="suggestion" data-message="Create a temperature report for the last seven days" data-feature="reports" disabled>
               <span class="suggestion-icon" aria-hidden="true">▤</span>
-              <span><strong>Explore reports</strong><small>Check the available report types</small></span>
+              <span><strong>Ask for a report</strong><small>“Create a temperature report for the last seven days”</small></span>
               <span class="suggestion-arrow" aria-hidden="true">↗</span>
             </button>
             <button type="button" class="suggestion" id="suggest-report" data-feature="reports" disabled>
               <span class="suggestion-icon" aria-hidden="true">＋</span>
-              <span><strong>Prepare a report</strong><small>Review the details before submitting</small></span>
+              <span><strong>Build a report</strong><small>On demand or on a schedule, reviewed before it’s sent</small></span>
               <span class="suggestion-arrow" aria-hidden="true">↗</span>
             </button>
           </div>
@@ -156,10 +156,19 @@
             </div>
             <div id="report-fields" class="report-builder">
               <div class="builder-row">
+                <span id="mode-label" class="row-label">Delivery</span>
+                <div class="row-control">
+                  <div class="segmented" role="radiogroup" aria-labelledby="mode-label">
+                    <label class="segment"><input type="radio" name="mode" value="on-demand" checked><span>On demand</span></label>
+                    <label class="segment"><input type="radio" name="mode" value="scheduled"><span>Scheduled</span></label>
+                  </div>
+                </div>
+              </div>
+              <div class="builder-row">
                 <span id="report-type-label" class="row-label">Report</span>
                 <div id="report-type-options" class="choice-cards row-control" role="radiogroup" aria-labelledby="report-type-label"></div>
               </div>
-              <div class="builder-row">
+              <div id="period-row" class="builder-row">
                 <span id="period-label" class="row-label">Period</span>
                 <div class="row-control">
                   <div class="chip-row" role="radiogroup" aria-labelledby="period-label">
@@ -178,12 +187,49 @@
                   <p id="range-error" class="field-error" role="alert" hidden></p>
                 </div>
               </div>
+              <div id="schedule-fields" hidden>
+                <div class="builder-row">
+                  <span id="frequency-label" class="row-label">Repeats</span>
+                  <div class="row-control">
+                    <div class="chip-row" role="radiogroup" aria-labelledby="frequency-label">
+                      <label class="chip"><input type="radio" name="frequency" value="daily"><span>Daily</span></label>
+                      <label class="chip"><input type="radio" name="frequency" value="weekly" checked><span>Weekly</span></label>
+                      <label class="chip"><input type="radio" name="frequency" value="monthly"><span>Monthly</span></label>
+                    </div>
+                  </div>
+                </div>
+                <div class="builder-row">
+                  <label class="row-label" for="draft-recipients">Send to</label>
+                  <div class="row-control">
+                    <input id="draft-recipients" name="recipients" type="text" inputmode="email" autocomplete="off" spellcheck="false"
+                      maxlength="2000" placeholder="name@example.com, another@example.com" aria-describedby="recipients-help recipients-error">
+                    <p id="recipients-help" class="field-help">Separate email addresses with commas. Everyone listed receives every report.</p>
+                    <p id="recipients-error" class="field-error" role="alert" hidden></p>
+                  </div>
+                </div>
+                <div class="builder-row">
+                  <span id="runs-label" class="row-label">Runs</span>
+                  <div class="row-control" role="group" aria-labelledby="runs-label">
+                    <div class="range-inputs">
+                      <label>From<input name="start_date" type="date" aria-describedby="schedule-error"></label>
+                      <span id="end-date-field" class="end-date-field">
+                        <span aria-hidden="true">–</span>
+                        <label>Until<input name="end_date" type="date" aria-describedby="end-date-help schedule-error"></label>
+                      </span>
+                    </div>
+                    <p id="schedule-readout" class="range-readout"></p>
+                    <p id="end-date-help" class="field-help">Leave “Until” empty to keep the schedule running.</p>
+                    <p id="schedule-error" class="field-error" role="alert" hidden></p>
+                  </div>
+                </div>
+              </div>
               <div class="builder-row">
                 <span id="format-label" class="row-label">Format</span>
                 <div class="row-control">
                   <div class="segmented" role="radiogroup" aria-labelledby="format-label">
                     <label class="segment"><input type="radio" name="format" value="pdf" checked><span>PDF</span></label>
                     <label class="segment"><input type="radio" name="format" value="csv"><span>CSV</span></label>
+                    <label class="segment"><input type="radio" name="format" value="xlsx"><span>Excel</span></label>
                   </div>
                 </div>
               </div>

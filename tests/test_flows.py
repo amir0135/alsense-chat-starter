@@ -6,11 +6,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from alsense_chat.adapters import synthetic
+from alsense_chat.agent import load_agent
 from alsense_chat.app import create_app
 from alsense_chat.config import Settings
 from alsense_chat.flows import FlowError, load_flows, validate_flow
 from alsense_chat.store import Store
-from alsense_chat.tools import Context, model_definition
+from alsense_chat.tools import Context
 
 CUSTOM_FLOWS = """flows:
   custom-check:
@@ -162,10 +163,13 @@ def test_site_identification_stops_after_three_attempts_and_stays_in_tenant(clie
 def test_health_check_is_a_backend_only_flow_tool(tmp_path):
     source = synthetic.build()
     ctx = Context(source, Store(str(tmp_path / "context.sqlite3")), "session", source.identity.users_me("alice"))
-    assert "check_site_health" not in model_definition()["tools"]
-    assert ctx.execute("check_site_health", {"site_id": "site-a"})["error"] == "Unknown tool."
-    assert ctx.execute("check_site_health", {"site_id": "site-a"}, flow=True)["data"]["checks"][0]["status"] == "open"
-    assert "error" in ctx.execute("check_site_health", {"site_id": "site-b"}, flow=True)
+    assert "check_site_health" not in load_agent().tools("model")
+    for caller in ("scripted", "model", "user"):
+        assert ctx.execute("check_site_health", {"site_id": "site-a"}, caller=caller)["error"] == "Unknown tool."
+    assert (
+        ctx.execute("check_site_health", {"site_id": "site-a"}, caller="flow")["data"]["checks"][0]["status"] == "open"
+    )
+    assert "error" in ctx.execute("check_site_health", {"site_id": "site-b"}, caller="flow")
 
 
 def test_free_text_triggers_start_a_flow_without_capturing_other_questions(client):

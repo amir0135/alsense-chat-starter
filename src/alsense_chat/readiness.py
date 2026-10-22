@@ -10,6 +10,7 @@ import re
 import subprocess
 
 from .adapters.synthetic.faults import FAULTS
+from .agent import load_agent
 from .config import ROOT, Settings
 from .flows import available
 from .scenarios import unavailable_reason
@@ -101,15 +102,27 @@ def system_status(state) -> dict:
             "No call reaches Alsense." if kind == "synthetic" else "",
         )
     )
-    for key, label, feature in (
-        ("sites", "Site directory", ""),
-        ("health", "Health-check service", "troubleshooting"),
-        ("reports", "Report service", "reports"),
-        ("support", "Support submission", "support"),
-        ("knowledge", "Guidance search", ""),
+    agent = load_agent()
+    items.append(
+        _item(
+            "agent",
+            "Agent modules",
+            ", ".join(module.title for module in agent.active()),
+            "configured",
+            "Each request gets only its routed modules' tools. Planned: "
+            + ", ".join(module.title for module in agent.future())
+            + ".",
+        )
+    )
+    for key, label, feature, detail in (
+        ("sites", "Site directory", "", "Matches friendly site names to the signed-in user's permitted sites."),
+        ("health", "Health-check service", "troubleshooting", ""),
+        ("reports", "Report service", "reports", "On-demand and scheduled reports, confirmed before submission."),
+        ("support", "Support submission", "support", ""),
+        ("knowledge", "Guidance search", "", ""),
     ):
         value, item_state = _service(settings, kind, feature)
-        items.append(_item(key, label, value, item_state))
+        items.append(_item(key, label, value, item_state, detail if item_state != "disabled" else ""))
     items.append(
         _item(
             "search",

@@ -3,5 +3,6 @@
   "kind": "report",
   "status": "accepted",
   "url": "/reference/report/example-idempotency-key",
-  "synthetic": true
+  "synthetic": true,
+  "next_run": null
 }

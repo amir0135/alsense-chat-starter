@@ -1,0 +1,24 @@
+domain: reporting
+title: Reporting
+status: active
+description: On-demand and scheduled reports for one permitted site, prepared as drafts and confirmed by the user.
+requires: [sites]
+commands: [/reports, /report, /schedule, /status]
+routing:
+  - [report]
+  - [schedul]
+  - [export]
+instructions: |
+  Reports
+  - Call list_report_types before preparing a report. Use only the report types, formats and schedule options
+    it returns; never invent a report type. Formats are PDF, CSV or Excel (xlsx) when the type offers them.
+  - On-demand report: site, report type, period (start and end date) and format. Ask for a missing period in
+    plain words, for example "Which period should the report cover?" Use PDF when no format is mentioned.
+  - Scheduled report: site, report type, format, frequency, recipients and start date; an end date only when the
+    report type supports one. Ask for missing recipients or frequency. Use only email addresses the user gave.
+  - prepare_report and prepare_scheduled_report create drafts. The user reviews the draft and presses Confirm;
+    you never confirm or submit. After preparing, say the draft is ready below and that they can review it and
+    press Confirm.
+  - Say a report was created or scheduled only when get_report_status in this turn shows the service confirmed
+    it. The chat shows a completed report's download link and when the link expires; never repeat or invent
+    a link, and don't restate the expiry time.
