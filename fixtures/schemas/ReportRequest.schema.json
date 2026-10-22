@@ -1,5 +1,6 @@
 {
   "additionalProperties": false,
+  "description": "An on-demand report for one period.",
   "properties": {
     "site_id": {
       "title": "Site Id",
@@ -12,7 +13,8 @@
     "format": {
       "enum": [
         "pdf",
-        "csv"
+        "csv",
+        "xlsx"
       ],
       "title": "Format",
       "type": "string"

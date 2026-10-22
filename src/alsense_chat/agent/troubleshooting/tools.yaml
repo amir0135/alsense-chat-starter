@@ -1,0 +1,37 @@
+# caller: model (offered to the model), user (runs only after an explicit user action) or backend (code only).
+tools:
+  search_docs:
+    caller: model
+    description: Search approved operations documentation and return source ids and excerpts.
+    parameters:
+      type: object
+      properties:
+        query: {type: string}
+      required: [query]
+      additionalProperties: false
+  prepare_support_ticket:
+    caller: model
+    feature: support
+    description: |
+      Prepare a support form for user review, without contacting support. Use the site id from
+      get_permitted_sites. Add the alarm id only when the issue concerns that alarm. Write summary and
+      steps_tried in plain language from the conversation.
+    parameters:
+      type: object
+      properties:
+        site_id: {type: string}
+        alarm_id: {type: string}
+        summary: {type: string}
+        steps_tried: {type: string}
+      required: [site_id, summary, steps_tried]
+      additionalProperties: false
+  check_site_health:
+    caller: backend
+    feature: troubleshooting
+    description: Open health checks for one site, used by guided checks. Never offered to the model.
+    parameters:
+      type: object
+      properties:
+        site_id: {type: string}
+      required: [site_id]
+      additionalProperties: false

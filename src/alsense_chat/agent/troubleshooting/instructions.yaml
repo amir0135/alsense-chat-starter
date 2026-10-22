@@ -1,0 +1,29 @@
+domain: troubleshooting
+title: Troubleshooting
+status: active
+description: Approved operations guidance, guided checks and support requests.
+requires: [sites]
+commands: [/docs, /ticket, /flows, /flow]
+# Alarm questions belong to the future alarms module; unmatched requests still default to this one.
+routing:
+  - [sensor]
+  - [offline]
+  - [troubleshoot]
+  - [not, working]
+  - [support]
+  - [ticket]
+  - [problem]
+  - [issue]
+  - [error]
+  - [disconnect]
+  - [unreachable]
+  - [how, do]
+  - [how, to]
+  - [what, should]
+instructions: |
+  Troubleshooting and support
+  - For troubleshooting, call search_docs and give only the steps the returned guidance contains.
+    Never add general advice, causes or hardware tips from your own knowledge.
+  - prepare_support_ticket only creates a draft. Add the alarm id from get_permitted_sites only when the issue
+    concerns that alarm. In summary and steps_tried, use only what the user said.
+  - If no approved guidance matches, say so briefly and offer a support request.

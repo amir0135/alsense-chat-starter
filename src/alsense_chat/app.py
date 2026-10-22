@@ -23,7 +23,7 @@ from .readiness import app_version, system_status
 from .runner import FoundryRunner, demo_run, error_reply
 from .scenarios import load_scenarios, unavailable_reason
 from .store import MissingRecord, Store
-from .tools import FEATURE_OFF, Context, model_definition
+from .tools import FEATURE_OFF, Context, check_registry
 
 log = logging.getLogger(__name__)
 bearer = HTTPBearer(auto_error=False)
@@ -131,18 +131,22 @@ def audit_reply(ctx: Context, reply: dict | None) -> None:
         flow_version=flow.get("version"),
         tools=[{"tool": call["tool"], "result": call["result"]} for call in ctx.calls],
         inputs=[{"tool": call["tool"], **call["inputs"]} for call in ctx.calls if call["inputs"]],
+        domains=list(ctx.domains),
+        offered_tools=list(ctx.offered),
         response_category=f"error:{error['category']}" if error else category,
         confirmation="prepared" if ctx.actions else "none",
         outcome=outcome,
         error_category=error.get("category") or (None if reply else "runtime_error"),
     )
-    log.info("chat %s persona=%s outcome=%s", ctx.correlation_id, ctx.user.id, outcome)
+    log.info(
+        "chat %s persona=%s domains=%s outcome=%s", ctx.correlation_id, ctx.user.id, ",".join(ctx.domains), outcome
+    )
 
 
 def create_app(settings: Settings | None = None, services: Services | None = None) -> FastAPI:
     settings = settings or load_settings()
     settings.validate()
-    model_definition()
+    check_registry()
     configure_logging(settings.log_level)
     if settings.reset_on_start:
         removed = Store.reset(settings.db)
@@ -344,7 +348,7 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         try:
             action = ctx.store.action(ctx.session_id, action_id)
             kind = action["kind"]
-            feature = "reports" if kind == "report" else "support"
+            feature = "support" if kind == "ticket" else "reports"
             if feature not in ctx.features:
                 error = "disabled"
                 raise HTTPException(403, FEATURE_OFF[feature])
@@ -380,6 +384,27 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
                 outcome=outcome,
                 error_category=error,
             )
+
+    @app.get("/api/actions/{action_id}/status")
+    def action_status(action_id: str, ctx: Annotated[Context, Depends(context)]):
+        """A confirmed report's job state and download link, so the widget can show the link right away."""
+        output = ctx.execute("get_report_status", {"action_id": action_id}, caller="user")
+        ctx.store.audit(
+            correlation_id=ctx.correlation_id,
+            session_id=ctx.session_id,
+            persona=ctx.user.id,
+            scenario=ctx.scenario or None,
+            event="status",
+            tools=[{"tool": call["tool"], "result": call["result"]} for call in ctx.calls],
+            outcome=ctx.calls[-1]["result"] if ctx.calls else None,
+            error_category=output.get("category"),
+        )
+        if "error" not in output:
+            return output["data"]
+        status = {"not_found": 404, "forbidden": 403, "disabled": 403, "invalid_input": 400}.get(
+            output["category"], 503
+        )
+        raise HTTPException(status, output["error"], headers={"X-Error-Category": output["category"]})
 
     @app.get("/reference/{path:path}")
     def reference(path: str):

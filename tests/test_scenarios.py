@@ -1,7 +1,7 @@
 """Every shipped scenario starts cleanly and produces the result its card promises."""
 
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import pytest
 import yaml
@@ -20,7 +20,7 @@ def start(client, scenario_id: str, headers: dict | None = None, **body):
 def default_report(site: str) -> dict:
     today = date.today()
     return {
-        "report_type": "alarm-history",
+        "report_type": "temperature-log",
         "format": "pdf",
         "start": (today - timedelta(days=29)).isoformat(),
         "end": today.isoformat(),
@@ -50,6 +50,9 @@ def drive(client, scenario: dict) -> dict:
             say(step["say"])
         elif "answer" in step:
             say(f"/flow {state['flow']['id']} {json.dumps([*state['flow']['answers'], step['answer']])}")
+        elif "choose" in step:
+            [choice] = [item for item in state["replies"][-1]["choices"] if item["label"] == step["choose"]]
+            say(choice["message"])
         elif "open" in step:
             defaults = default_report(site) if step["open"] == "report" else {"site_id": site}
             state["draft"] = {"kind": step["open"], **defaults, **step.get("prefill", {})}
@@ -71,6 +74,14 @@ def drive(client, scenario: dict) -> dict:
     return state
 
 
+def download_link(reply: dict) -> bool:
+    """The status reply carries an approved download link and an expiry 24 hours after the report was ready."""
+    [status] = [source["data"] for source in reply["sources"] if source["tool"] == "get_report_status"]
+    result = status["result"]
+    ready, expires = (datetime.fromisoformat(result[key]) for key in ("completed_at", "expires_at"))
+    return result["url"].startswith("/reference/") and expires - ready == timedelta(hours=24)
+
+
 EXPECTATIONS = {
     "alice-unreachable-site": lambda s: (
         (s["last"]["flow"]["outcome"], s["last"]["flow"]["category"]) == ("resolve", "connectivity_guidance")
@@ -80,9 +91,27 @@ EXPECTATIONS = {
         and s["last"]["actions"][0]["payload"]["summary"] == "Site seems disconnected"
     ),
     "report-lifecycle": lambda s: (
-        s["last"]["text"] == "Your synthetic report is ready."
+        s["last"]["text"].startswith("Your synthetic report is ready.")
         and s["action"]["payload"]["format"] == "csv"
         and s["replaced"][0]["payload"]["format"] == "pdf"
+        and download_link(s["last"])
+    ),
+    "report-real-path": lambda s: (
+        s["replies"][0]["sources"][0]["tool"] == "get_permitted_sites"
+        and s["action"]["payload"]["report_type"] == "temperature-log"
+        and s["submissions"][-1].json()["status"] == "accepted"
+        and download_link(s["last"])
+    ),
+    "scheduled-report": lambda s: (
+        s["action"]["kind"] == "scheduled_report"
+        and s["action"]["payload"]["format"] == "xlsx"
+        and len(s["action"]["payload"]["recipients"]) == 2
+        and s["submissions"][-1].json()["status"] == "scheduled"
+        and s["last"]["text"].startswith("Your schedule is confirmed.")
+    ),
+    "report-similar-sites": lambda s: (
+        [choice["label"] for choice in s["replies"][0]["choices"]] == ["Demo East Hall", "Demo East Depot"]
+        and s["action"]["payload"]["site_id"] == "site-c2"
     ),
     "ambiguous-site": lambda s: (
         s["replies"][-2]["text"].startswith("I found more than one matching site")

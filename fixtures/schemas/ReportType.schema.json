@@ -1,4 +1,39 @@
 {
+  "$defs": {
+    "ScheduleSupport": {
+      "additionalProperties": false,
+      "description": "How a report type can be scheduled. Absent when the type is on demand only.",
+      "properties": {
+        "frequencies": {
+          "items": {
+            "enum": [
+              "daily",
+              "weekly",
+              "monthly"
+            ],
+            "type": "string"
+          },
+          "title": "Frequencies",
+          "type": "array"
+        },
+        "end_date_supported": {
+          "title": "End Date Supported",
+          "type": "boolean"
+        },
+        "max_recipients": {
+          "title": "Max Recipients",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "frequencies",
+        "end_date_supported",
+        "max_recipients"
+      ],
+      "title": "ScheduleSupport",
+      "type": "object"
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -13,12 +48,24 @@
       "items": {
         "enum": [
           "pdf",
-          "csv"
+          "csv",
+          "xlsx"
         ],
         "type": "string"
       },
       "title": "Formats",
       "type": "array"
+    },
+    "schedule": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ScheduleSupport"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     }
   },
   "required": [

@@ -1,0 +1,118 @@
+# Authorized-site resolution: the cases the real site operation must handle. The assistant matches a friendly
+# name against the sites the signed-in user may access and never guesses a site id.
+cases:
+  - name: site_one_match
+    question: Create an alarm history report for Demo North for the last 30 days.
+    expected:
+      tools: [get_permitted_sites, list_report_types, prepare_report]
+      parameters:
+        site: Demo North
+        report_type: alarm-history
+        period_days: 30
+      clarification_required: false
+      result: draft_prepared
+      must_not: [use_unauthorized_site, guess_site_id]
+
+  - name: site_name_with_extra_words_is_confirmed
+    description: >
+      "Demo North Annex" contains a permitted site's name but may be another place, so the assistant asks
+      instead of preparing a report for Demo North.
+    question: Create a temperature report for Demo North Annex for the last seven days.
+    expected:
+      tools: [get_permitted_sites]
+      clarification:
+        asks_for: site
+        options: ["Yes, Demo North"]
+      confirmation_required: false
+      result: clarification
+      must_not: [prepare_report, guess_site_id]
+
+  - name: site_several_similar
+    context:
+      user: carol
+    question: Create a temperature report for Demo East for the last seven days.
+    expected:
+      tools: [get_permitted_sites]
+      clarification:
+        asks_for: site
+        options: [Demo East Hall, Demo East Depot]
+      confirmation_required: false
+      result: clarification
+      must_not: [prepare_report, guess_site_id]
+
+  - name: site_no_match
+    question: Create a temperature report for Harbour View for the last seven days.
+    expected:
+      tools: [get_permitted_sites]
+      clarification:
+        asks_for: site
+        options: [Demo North]
+        text_includes: ["I couldn't find that site among the sites you can access."]
+      confirmation_required: false
+      result: clarification
+      must_not: [prepare_report, use_unauthorized_site]
+
+  - name: site_without_access
+    description: >
+      Demo South exists, but for another customer. The reply is the same as for a site that doesn't exist, so
+      it reveals nothing about sites the user can't access.
+    question: Create a temperature report for Demo South for the last seven days.
+    expected:
+      tools: [get_permitted_sites]
+      clarification:
+        asks_for: site
+        options: [Demo North]
+        text_includes: ["I couldn't find that site among the sites you can access."]
+      confirmation_required: false
+      result: clarification
+      must_not_mention: ["site-b"]
+      must_not: [prepare_report, use_unauthorized_site]
+
+  - name: site_without_access_named_in_context
+    description: The same check with sites defined by the case, as in an anonymized customer example.
+    context:
+      user: alice
+      sites: [Store North]
+      inaccessible_sites: [Store East]
+    question: Create a temperature report for Store East for the last seven days.
+    expected:
+      tools: [get_permitted_sites]
+      clarification:
+        asks_for: site
+        options: [Store North]
+      result: clarification
+      must_not: [prepare_report, use_unauthorized_site]
+
+  - name: site_service_unavailable
+    context:
+      faults: [sites_unavailable]
+    question: Create a temperature report for Demo North for the last seven days.
+    expected:
+      tools: [get_permitted_sites]
+      clarification_required: false
+      confirmation_required: false
+      result: error:unavailable
+      text_includes: ["The site directory is temporarily unavailable. Try again in a moment."]
+      must_not: [list_report_types, prepare_report]
+
+  - name: site_access_revoked_before_confirmation
+    description: Access removed upstream after the draft was prepared stops the submission.
+    context:
+      faults: [site_forbidden]
+    question: Create a temperature report for Demo North for the last seven days.
+    steps:
+      - confirm: last
+    expected:
+      confirmation_required: true
+      result: not_submitted
+      must_not: [submit]
+
+  - name: sites_listed_for_the_user
+    question: Which sites can I access?
+    expected:
+      tools: [get_permitted_sites]
+      domains: [sites]
+      offered_tools: [get_permitted_sites]
+      result: answer
+      text_includes: ["Demo North"]
+      must_not: [use_unauthorized_site, offer_unrelated_tools]

@@ -12,6 +12,7 @@ from ..contracts import (
     ReportJob,
     ReportRequest,
     ReportType,
+    ScheduledReportRequest,
     Site,
     Submission,
     SupportRequest,
@@ -36,9 +37,9 @@ class AlsenseIdentity:
 
 
 class AlsenseSiteDirectory:
-    """SiteDirectory: search the user's permitted sites; return stable ids, display names and active alarms."""
+    """SiteDirectory: the sites the signed-in user may access, with stable ids and display names, and alarms."""
 
-    def search_sites(self, user: User, query: str) -> list[Site]:
+    def permitted_sites(self, user: User) -> list[Site]:
         raise NotConfiguredError("sites")
 
     def active_alarms(self, user: User, site_id: str) -> list[Alarm]:
@@ -60,12 +61,15 @@ class AlsenseHealth:
 
 
 class AlsenseReports:
-    """ReportService: report metadata, idempotent submission and job status."""
+    """ReportService: report metadata and schedule support, idempotent submission and scheduling, job status."""
 
     def report_types(self, user: User) -> list[ReportType]:
         raise NotConfiguredError("reports")
 
     def submit_report(self, user: User, request: ReportRequest, idempotency_key: str) -> Submission:
+        raise NotConfiguredError("reports")
+
+    def schedule_report(self, user: User, request: ScheduledReportRequest, idempotency_key: str) -> Submission:
         raise NotConfiguredError("reports")
 
     def report_status(self, user: User, job_id: str) -> ReportJob:

@@ -14,7 +14,7 @@ from alsense_chat.app import create_app
 from alsense_chat.config import Settings
 from alsense_chat.runner import FoundryRunner, guard
 from alsense_chat.store import Store
-from alsense_chat.tools import Context, model_definition, safe_link, tool_definitions
+from alsense_chat.tools import Context, check_registry, safe_link, tool_definitions
 
 
 @pytest.fixture
@@ -53,11 +53,25 @@ def report(site="site-a"):
 
 
 def test_all_tools_are_declared_and_curated():
-    assert len(model_definition()["tools"]) == 6
-    assert "submit" not in model_definition()["tools"]
-    sites = next(tool for tool in tool_definitions() if tool["name"] == "resolve_sites")
-    assert '"*"' in sites["description"]
-    assert '"*"' in sites["parameters"]["properties"]["query"]["description"]
+    agent = check_registry()
+    assert sorted(agent.tools("model")) == [
+        "get_permitted_sites",
+        "get_report_status",
+        "list_report_types",
+        "prepare_report",
+        "prepare_scheduled_report",
+        "prepare_support_ticket",
+        "search_docs",
+    ]
+    assert agent.tools()["confirm_report"].caller == "user"
+    assert not any("submit" in name for name in agent.tools("model"))
+    [sites] = tool_definitions(["get_permitted_sites"])
+    assert "friendly site name" in sites["description"]
+    assert not sites["parameters"].get("required")
+    [scheduled] = tool_definitions(["prepare_scheduled_report"])
+    assert scheduled["parameters"]["properties"]["recipients"]["maxItems"] == 25
+    assert "Never invent" in scheduled["parameters"]["properties"]["recipients"]["description"]
+    assert "list every site" in sites["parameters"]["properties"]["name"]["description"]
 
 
 def test_login_internal_only_and_feature_flag(setup, tmp_path):
@@ -84,6 +98,7 @@ def test_report_types_require_a_session(setup):
     assert client.get("/api/report-types").status_code == 401
     headers = login(client)
     assert [item["id"] for item in client.get("/api/report-types", headers=headers).json()] == [
+        "temperature-log",
         "alarm-history",
         "site-status",
     ]
@@ -107,8 +122,8 @@ def test_demo_mode_understands_common_suggested_questions(setup):
 
     sites = chat(client, headers, "Which sites can I access?")
     assert sites["status"] == "answer"
-    assert sites["sources"][0]["tool"] == "resolve_sites"
-    assert sites["sources"][0]["data"][0]["id"] == "site-a"
+    assert sites["sources"][0]["tool"] == "get_permitted_sites"
+    assert sites["sources"][0]["data"]["sites"][0]["id"] == "site-a"
 
     reports = chat(client, headers, "What report types are available?")
     assert reports["status"] == "answer"
@@ -123,14 +138,14 @@ def test_site_and_tenant_isolation(setup):
     client, _, _ = setup
     alice, bob = login(client), login(client, "bob")
     own = chat(client, alice, "/sites *")
-    assert own["sources"][0]["data"][0]["id"] == "site-a"
+    assert own["sources"][0]["data"]["sites"][0]["id"] == "site-a"
     assert "site-b" not in json.dumps(own)
     assert chat(client, alice, "/sites site-b")["status"] == "not_in_data"
     denied = chat(client, alice, "/report " + json.dumps(report("site-b")))
     assert (denied["status"], denied["error"]["category"]) == ("error", "forbidden")
     assert denied["text"] == "That site isn't one of your permitted sites."
     assert denied["actions"] == []
-    assert chat(client, bob, "/sites *")["sources"][0]["data"][0]["id"] == "site-b"
+    assert chat(client, bob, "/sites *")["sources"][0]["data"]["sites"][0]["id"] == "site-b"
 
 
 def test_explicit_confirmation_and_idempotent_submission(setup):
@@ -150,7 +165,8 @@ def test_explicit_confirmation_and_idempotent_submission(setup):
     assert source.submissions == 1
     status = chat(client, headers, f"/status {action_id}")
     assert status["sources"][0]["data"]["state"] == "completed"
-    assert status["text"] == "Your synthetic report is ready."
+    assert status["text"].startswith("Your synthetic report is ready.")
+    assert status["sources"][0]["data"]["result"]["url"].endswith("/download")
 
 
 def test_ticket_alarm_authorization_and_prepare_only(setup):
@@ -236,7 +252,7 @@ def test_reply_guard_blocks_inventions(tmp_path):
     user = SyntheticIdentity().users_me("alice")
     _, session_id = store.create_session(user, 3600)
     ctx = Context(synthetic.build(), store, session_id, user)
-    ctx.execute("resolve_sites", {"query": "*"})
+    ctx.execute("get_permitted_sites", {})
     for reply in (
         {"status": "answer", "text": "There are 987 alarms.", "source_ids": ["tool-1"]},
         {"status": "answer", "text": "Done.", "source_ids": ["made-up"]},
@@ -254,15 +270,15 @@ def test_reply_guard_keeps_internal_identifiers_out_of_text(tmp_path):
     user = SyntheticIdentity().users_me("alice")
     _, session_id = store.create_session(user, 3600)
     ctx = Context(synthetic.build(), store, session_id, user)
-    sites = ctx.execute("resolve_sites", {"query": "*"})
+    sites = ctx.execute("get_permitted_sites", {})
     docs = ctx.execute("search_docs", {"query": "sensor offline"})
     assert "tenant_id" not in json.dumps(sites)
-    assert sites["data"][0]["alarms"][0]["label"] == "Sensor offline"
+    assert sites["data"]["sites"][0]["alarms"][0]["label"] == "Sensor offline"
     for text in (
         "You can access Demo North (id: site-a).",
         "Demo North belongs to customer-a.",
         "I found an alarm, alarm-site-a, at Demo North.",
-        "I used resolve_sites to check.",
+        "I used get_permitted_sites to check.",
         "Which site id and alarm id should I use?",
     ):
         with pytest.raises(ValueError):
@@ -292,8 +308,8 @@ def test_foundry_backend_executes_tools_and_never_receives_credentials(tmp_path)
 
     class Call:
         type = "function_call"
-        name = "resolve_sites"
-        arguments = '{"query":"*"}'
+        name = "get_permitted_sites"
+        arguments = "{}"
         call_id = "call-1"
 
         def model_dump(self, **kwargs):
@@ -319,7 +335,9 @@ def test_foundry_backend_executes_tools_and_never_receives_credentials(tmp_path)
     runner.deployment = "test"
     runner.client = SimpleNamespace(responses=SimpleNamespace(create=create))
     events = list(runner.run("My sites?", ctx))
-    assert events[-1][1]["sources"][0]["data"][0]["id"] == "site-a"
+    assert events[-1][1]["sources"][0]["data"]["sites"][0]["id"] == "site-a"
+    assert [tool["name"] for tool in requests[0]["tools"]] == ["get_permitted_sites"]
+    assert "Reports" not in requests[0]["instructions"]
     assert token not in json.dumps(requests)
     assert "site-b" not in json.dumps(requests)
     assert requests[1]["input"][-1]["type"] == "function_call_output"
@@ -414,6 +432,11 @@ def test_export_excludes_credentials_databases_and_parent_repo(tmp_path):
             ".devcontainer/devcontainer.json",
             "fixtures/reports/failed.json",
             "evals/synthetic/troubleshooting.yaml",
+            "evals/synthetic/reporting.yaml",
+            "fixtures/reports/scheduled.json",
+            "src/alsense_chat/agent/core/instructions.yaml",
+            "src/alsense_chat/agent/reporting/tools.yaml",
+            "src/alsense_chat/domains/reporting.py",
             "src/alsense_chat/adapters/alsense/__init__.py",
         ):
             assert f"alsense-chat-starter/{required}" in names, required

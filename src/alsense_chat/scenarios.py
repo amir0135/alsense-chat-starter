@@ -15,7 +15,7 @@ from .config import ROOT
 from .flows import available
 
 SAMPLE_SCENARIOS = ROOT / "scenarios.yaml"
-ACTIONS = ("say", "answer", "open", "click", "set")
+ACTIONS = ("say", "answer", "choose", "open", "click", "set")
 
 
 class ScenarioError(ValueError):
@@ -23,7 +23,7 @@ class ScenarioError(ValueError):
 
 
 class Step(BaseModel):
-    """One presenter action. Exactly one of say, answer, open, click or set."""
+    """One presenter action. Exactly one of say, answer, choose, open, click or set."""
 
     model_config = ConfigDict(extra="forbid")
     note: str = Field(min_length=1, max_length=300)
@@ -31,6 +31,7 @@ class Step(BaseModel):
     display: str | None = Field(default=None, min_length=1, max_length=200)
     answer: str | None = Field(default=None, min_length=1, max_length=200)
     label: str | None = Field(default=None, min_length=1, max_length=200)
+    choose: str | None = Field(default=None, min_length=1, max_length=200)
     open: Literal["report", "ticket"] | None = None
     prefill: dict[str, str] | None = None
     click: Literal["prepare", "confirm", "edit", "status", "support"] | None = None

@@ -16,6 +16,7 @@ from .contracts import (
     ReportJob,
     ReportRequest,
     ReportType,
+    ScheduledReportRequest,
     Site,
     Submission,
     SupportRequest,
@@ -37,8 +38,12 @@ class PersonaDirectory(Protocol):
 
 
 class SiteDirectory(Protocol):
-    def search_sites(self, user: User, query: str) -> list[Site]:
-        """Sites the user may access whose name contains `query`; `*` lists them all."""
+    def permitted_sites(self, user: User) -> list[Site]:
+        """Every site the signed-in user may access, with stable ids and display names.
+
+        Matching a friendly name to these sites happens in the backend (`domains/sites.py`), so the model never
+        guesses a site id and sites without access are never returned.
+        """
         ...
 
     def active_alarms(self, user: User, site_id: str) -> list[Alarm]: ...
@@ -59,9 +64,17 @@ class HealthCheckService(Protocol):
 class ReportService(Protocol):
     def report_types(self, user: User) -> list[ReportType]: ...
 
-    def submit_report(self, user: User, request: ReportRequest, idempotency_key: str) -> Submission: ...
+    def submit_report(self, user: User, request: ReportRequest, idempotency_key: str) -> Submission:
+        """Start an on-demand report job after the user confirmed the draft."""
+        ...
 
-    def report_status(self, user: User, job_id: str) -> ReportJob: ...
+    def schedule_report(self, user: User, request: ScheduledReportRequest, idempotency_key: str) -> Submission:
+        """Create a recurring report after the user confirmed the draft."""
+        ...
+
+    def report_status(self, user: User, job_id: str) -> ReportJob:
+        """Job state; a completed job has a download link and the time the link expires."""
+        ...
 
 
 class SupportService(Protocol):

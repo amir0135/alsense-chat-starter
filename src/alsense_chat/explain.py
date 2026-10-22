@@ -3,7 +3,8 @@
 Rows use display names only: no internal ids, tenant ids, tool names or raw evidence.
 """
 
-from .tools import TOOL_LABELS, Context
+from .agent import load_agent
+from .tools import HANDLERS, Context
 
 ASSISTANTS = {
     "scripted": "Scripted demo assistant · no AI model",
@@ -19,7 +20,8 @@ def humanize(value: str) -> str:
 def lookups(ctx: Context) -> str:
     seen: list[str] = []
     for call in ctx.calls:
-        label = TOOL_LABELS.get(call["tool"])
+        handler = HANDLERS.get(call["tool"])
+        label = handler.label if handler else ""
         if not label:
             continue
         result = call["result"]
@@ -35,6 +37,8 @@ def lookups(ctx: Context) -> str:
 
 def explain(ctx: Context, rows: list[tuple[str, str]] | None = None, checks: str = "") -> list[dict]:
     items = [("Assistant", ASSISTANTS.get(ctx.assistant, ctx.assistant)), *(rows or [])]
+    if ctx.domains:
+        items.append(("Domains", ", ".join(load_agent().titles(ctx.domains))))
     items.append(("Looked up", lookups(ctx)))
     documents = [doc["title"] for item in ctx.evidence if item["tool"] == "search_docs" for doc in item["data"]]
     items.append(("Evidence", ", ".join(documents)))

@@ -2,6 +2,8 @@
   "id": "example-idempotency-key",
   "state": "processing",
   "url": null,
+  "completed_at": null,
+  "expires_at": null,
   "message": null,
   "synthetic": true
 }

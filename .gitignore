@@ -3,8 +3,10 @@
 .env.*
 !.env.example
 
-# Customer-provided material and local overrides stay on this machine.
+# Customer-provided material and local overrides stay on this machine, including evaluation cases written from
+# customer examples.
 *.local.*
+evals/local/
 compose.override.yaml
 compose.override.yml
 

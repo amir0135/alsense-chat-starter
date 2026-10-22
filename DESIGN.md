@@ -14,6 +14,7 @@ colors:
   line: "#d9dde3"
   soft-line: "#e8ebef"
   success: "#236548"
+  success-hover: "#1a4e37"
   success-wash: "#eaf5ee"
   error: "#a10e22"
   error-wash: "#fff0f1"
@@ -219,8 +220,9 @@ Controls and evidence containers use small 3–5px corners. The composer is slig
 ### Cards / Containers
 - **Conversation:** No enclosing card around the whole chat; distinguish individual messages and evidence in place.
 - **Suggestions:** White, outlined rows with a small red utility mark and concise title plus explanation.
-- **Drafts:** Inline bordered panel above the composer. Never hide a consequential review form in a modal. The report draft is a builder: a live one-line summary and the prepare action stay pinned to the panel's bottom edge while its controls scroll.
-- **Action confirmation:** Show the chosen site and fields, state that nothing has been sent, then provide one explicit confirmation action. A three-step tracker (prepared, confirm, synthetic result) shows where the action stands; "Edit details" prepares a replacement draft and marks the old one replaced.
+- **Drafts:** Inline bordered panel above the composer. Never hide a consequential review form in a modal. The report draft is a builder: a live one-line summary and the prepare action stay pinned to the panel's bottom edge while its controls scroll. A Delivery segmented control switches between On demand (period chips) and Scheduled (Repeats chips, a Send to field and a Runs date pair). Scheduled mode grays out report types the service can't schedule and labels them "On demand only"; it never hides them.
+- **Action confirmation:** Show the chosen site and fields, state that nothing has been sent, then provide one explicit confirmation action. A three-step tracker (prepared, confirm, synthetic result) shows where the action stands; "Edit details" prepares a replacement draft and marks the old one replaced. Once confirmed, the line under the title says what happened instead of "nothing has been sent".
+- **Report result:** A confirmed report shows its download link at once, as the card's one Success green button ("Download synthetic report" with a down arrow), and directly below it the expiry in muted text: "Expires 24 hours after the report was ready · date, time". The lifetime and time come from the service, never from the widget. While the job runs, a small spinner and one line take the button's place; an expired or failed result says so in error text with no link. A confirmed schedule shows its first run date and a link to the synthetic schedule instead.
 
 ### Synthetic banner
 - A permanent full-width strip above the workspace and on the System status page, in Warning Wash with Warning Ink. It says whether the demo is local or hosted, that it uses synthetic data and does not connect to Alsense, and links to System status. It is never dismissible.
@@ -240,7 +242,8 @@ Controls and evidence containers use small 3–5px corners. The composer is slig
 
 ### Inputs / Fields
 - **Style:** White fill, 1px neutral border, 5px corners, and 8–10px internal padding.
-- **Choices:** Few, known options use native radios styled as choice cards (report type), pill chips (period presets) or a segmented control (format). Selection is a Signal Red border on a Signal Wash fill; a single permitted site shows as a fixed pill instead of a one-option select.
+- **Choices:** Few, known options use native radios styled as choice cards (report type), pill chips (period presets, schedule frequency) or a segmented control (delivery, format). Selection is a Signal Red border on a Signal Wash fill; a single permitted site shows as a fixed pill instead of a one-option select. Options the selected report type doesn't offer stay visible and grayed out.
+- **Recipients:** One text field for comma-separated email addresses with a help line below. An incomplete address is named in error text under the field; an empty list is explained in the pinned summary ("Add recipients") rather than as an error.
 - **Focus:** Visible red outline for keyboard focus; composer also shifts its border and uses a restrained ring.
 - **Error / Disabled:** Use a nearby text message for errors and preserve readable contrast for disabled controls. Validate date ranges inline and disable the prepare action until the range is valid.
 - **Access code:** Mask by default with a user-controlled show/hide button. Never persist the value.
@@ -254,6 +257,8 @@ Controls and evidence containers use small 3–5px corners. The composer is slig
 - **Activity:** A small spinner and plain-language status sit in the assistant turn while backend tools run.
 - **Actions:** Keep report and support drafts inline and distinguish prepared, submitting, submitted, and failed states.
 - **Guided checks:** Each step is an assistant turn labelled with the check and step number, with Yes/No or site pills as answers; the chosen answer stays highlighted and earlier steps lock. Results show "What we checked" and, when the tree says so, a prefilled support request instead of free-form advice.
+- **Answer buttons:** When the assistant asks a question it can offer the answers, they appear as the same pills as guided-check answers (site pills carry the site glyph). Choosing one highlights it, locks the group and sends the complete request; only the newest question's buttons stay active. Details that are easier to give in a form, such as recipients, get one "Add recipients in the form" button that opens the builder with everything else filled in.
+- **Lookups behind a draft or a question:** Don't repeat the site list or report catalog above a draft card or answer buttons; "Why this result?" lists what was looked up.
 
 ## Do's and Don'ts
 
@@ -267,5 +272,6 @@ Controls and evidence containers use small 3–5px corners. The composer is slig
 ### Don't:
 - **Don't** display raw tool JSON, internal source IDs, or unexplained backend errors to operators.
 - **Don't** imply that a report or ticket has been sent before the user confirms it.
+- **Don't** show a download link without its expiry, or state a link lifetime the service didn't return.
 - **Don't** put the session token or access code in browser storage, visible conversation text, or model input.
 - **Don't** copy Danfoss or Alsense production logos, customer data, or claims into this independent starter.

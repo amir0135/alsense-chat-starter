@@ -1,0 +1,67 @@
+{
+  "additionalProperties": false,
+  "description": "A recurring report sent to recipients until it is cancelled or reaches its end date.",
+  "properties": {
+    "site_id": {
+      "title": "Site Id",
+      "type": "string"
+    },
+    "report_type": {
+      "title": "Report Type",
+      "type": "string"
+    },
+    "format": {
+      "enum": [
+        "pdf",
+        "csv",
+        "xlsx"
+      ],
+      "title": "Format",
+      "type": "string"
+    },
+    "frequency": {
+      "enum": [
+        "daily",
+        "weekly",
+        "monthly"
+      ],
+      "title": "Frequency",
+      "type": "string"
+    },
+    "recipients": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Recipients",
+      "type": "array"
+    },
+    "start_date": {
+      "format": "date",
+      "title": "Start Date",
+      "type": "string"
+    },
+    "end_date": {
+      "anyOf": [
+        {
+          "format": "date",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "End Date"
+    }
+  },
+  "required": [
+    "site_id",
+    "report_type",
+    "format",
+    "frequency",
+    "recipients",
+    "start_date"
+  ],
+  "title": "ScheduledReportRequest",
+  "type": "object"
+}

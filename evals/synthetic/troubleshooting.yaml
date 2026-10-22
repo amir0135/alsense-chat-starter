@@ -1,124 +1,127 @@
-# Guided troubleshooting behaviour. Scripted mode asserts exact tool calls and outcome categories.
+# Guided troubleshooting. Guided checks are deterministic in both modes: the backend runs the tree.
 cases:
-  - id: site-connection-unreachable
+  - name: site_connection_unreachable
     description: A misspelled site resolves to Demo North and the backend finds its gateway offline.
-    user: alice
     steps:
       - flow: site-connection
         answers: ["no", "demo nrth", "yes"]
     expected:
+      tools: [get_permitted_sites, check_site_health]
       status: answer
-      resolved_site: Demo North
-      tool_calls: [resolve_sites, check_site_health]
-      outcome: connectivity_guidance
-      outcome_kind: resolve
-      must_not: [prepare_support_ticket, submit]
+      result: flow:connectivity_guidance
+      flow:
+        outcome: resolve
+        resolved_site: Demo North
+      must_not: [prepare_support_ticket, submit, use_unauthorized_site, guess_site_id]
 
-  - id: site-connection-needs-support
+  - name: site_connection_needs_support
     description: No open gateway checks, so the tree ends in a prefilled support request.
-    user: bob
+    context:
+      user: bob
     steps:
       - flow: site-connection
         answers: ["no", "Demo South"]
     expected:
+      tools: [get_permitted_sites, check_site_health]
       status: answer
-      resolved_site: Demo South
-      tool_calls: [resolve_sites, check_site_health]
-      outcome: needs_investigation
-      outcome_kind: ticket
+      result: flow:needs_investigation
+      flow:
+        outcome: ticket
+        resolved_site: Demo South
       must_not: [submit]
 
-  - id: data-still-arriving
+  - name: data_still_arriving
     description: Readings are arriving, so no lookup runs at all.
-    user: alice
     steps:
       - flow: site-connection
         answers: ["yes"]
     expected:
+      tools: []
       status: answer
-      tool_calls: []
-      outcome: connection_ok
-      outcome_kind: ticket
+      result: flow:connection_ok
+      flow:
+        outcome: ticket
 
-  - id: site-not-identified
+  - name: site_not_identified
     description: Three failed attempts end with a support request instead of a guess.
-    user: alice
     steps:
       - flow: site-connection
         answers: ["no", "zzz", "qqq", "www"]
     expected:
-      resolved_site: Not identified
-      tool_calls: [resolve_sites]
-      outcome: site_not_identified
-      outcome_kind: ticket
+      tools: [get_permitted_sites]
+      result: flow:site_not_identified
+      flow:
+        outcome: ticket
+        resolved_site: Not identified
 
-  - id: ambiguous-site-asks-which
-    description: Two sites match equally well, so the assistant asks instead of guessing.
-    user: carol
+  - name: ambiguous_site_asks_which
+    description: Two sites match equally well, so the guided check asks instead of guessing.
+    context:
+      user: carol
     steps:
       - flow: site-connection
         answers: ["no", "demo east"]
     expected:
-      status: clarification
-      tool_calls: [resolve_sites]
-      options: [Demo East Hall, Demo East Depot]
-      text_includes: [I found more than one matching site.]
+      tools: [get_permitted_sites]
+      result: clarification
+      clarification:
+        options: [Demo East Hall, Demo East Depot]
+        text_includes: ["I found more than one matching site."]
 
-  - id: health-service-down-stops-explicitly
+  - name: health_service_down_stops_explicitly
     description: A failed lookup stops the flow with the reason, never the "no" branch.
-    user: alice
-    faults: [health_unavailable]
+    context:
+      faults: [health_unavailable]
     steps:
       - flow: site-connection
         answers: ["no", "Demo North"]
     expected:
+      tools: [get_permitted_sites, check_site_health]
       status: error
       error_category: unavailable
-      tool_calls: [resolve_sites, check_site_health]
-      outcome: lookup_unavailable
-      outcome_kind: ticket
-      must_not_mention: [The gateway looks online]
+      result: flow:lookup_unavailable
+      flow:
+        outcome: ticket
+      must_not_mention: ["The gateway looks online"]
 
-  - id: stale-health-not-trusted
+  - name: stale_health_not_trusted
     description: Hours-old health data is reported as out of date, not used.
-    user: alice
-    faults: [health_stale]
+    context:
+      faults: [health_stale]
     steps:
       - flow: site-connection
         answers: ["no", "Demo North"]
     expected:
       status: error
       error_category: stale
-      outcome: lookup_stale
+      result: flow:lookup_stale
 
-  - id: free-text-starts-the-flow
-    description: Trigger words start the matching guided check in scripted mode.
-    user: alice
-    steps:
-      - say: Our site is unreachable since this morning
+  - name: free_text_starts_the_flow
+    description: Trigger words start the matching guided check.
+    question: Our site is unreachable since this morning
     expected:
-      status: clarification
-      tool_calls: []
-      flow_step: question
+      tools: []
+      result: clarification
+      flow:
+        step: question
 
-  - id: offline-sensor-guidance
+  - name: offline_sensor_guidance
     description: Troubleshooting guidance comes only from approved documents.
-    user: alice
-    steps:
-      - say: My sensor is offline. What should I check?
+    question: My sensor is offline. What should I check?
     expected:
-      status: answer
-      tool_calls: [search_docs]
+      tools: [search_docs]
+      result: answer
       evidence: [Synthetic alarm and report guide]
-      text_includes: [Demo North]
-      must_not: [prepare_support_ticket, prepare_report]
+      text_includes: ["Demo North"]
+      domains: [sites, troubleshooting]
+      must_not: [prepare_support_ticket, prepare_report, offer_unrelated_tools]
 
-  - id: no-approved-answer
+  - name: no_approved_answer
     description: Nothing approved matches, so the assistant says so instead of inventing advice.
-    user: bob
-    steps:
-      - say: /docs compressor calibration
+    context:
+      user: bob
+    question: /docs compressor calibration
     expected:
-      status: not_in_data
-      tool_calls: [search_docs]
-      text_includes: [No approved guidance matches this issue.]
+      tools: [search_docs]
+      result: not_found
+      text_includes: ["No approved guidance matches this issue."]

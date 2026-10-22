@@ -50,6 +50,10 @@ MIGRATIONS = (
     );
     CREATE INDEX audit_session ON audit (session_id, id)
     """,
+    """
+    ALTER TABLE audit ADD COLUMN domains TEXT NOT NULL DEFAULT '[]';
+    ALTER TABLE audit ADD COLUMN offered_tools TEXT NOT NULL DEFAULT '[]'
+    """,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 AUDIT_FIELDS = (
@@ -62,6 +66,8 @@ AUDIT_FIELDS = (
     "flow_version",
     "tools",
     "inputs",
+    "domains",
+    "offered_tools",
     "response_category",
     "confirmation",
     "outcome",
@@ -210,8 +216,8 @@ class Store:
         if unknown:
             raise ValueError(f"Unknown audit fields: {sorted(unknown)}")
         values = {name: record.get(name) for name in AUDIT_FIELDS}
-        values["tools"] = json.dumps(values["tools"] or [])
-        values["inputs"] = json.dumps(values["inputs"] or [])
+        for name in ("tools", "inputs", "domains", "offered_tools"):
+            values[name] = json.dumps(values[name] or [])
         with self.connection() as db:
             db.execute(
                 f"INSERT INTO audit (created, {', '.join(AUDIT_FIELDS)}) "
@@ -226,8 +232,8 @@ class Store:
         records = []
         for row in reversed(rows):
             record = dict(row)
-            record["tools"] = json.loads(record["tools"])
-            record["inputs"] = json.loads(record["inputs"])
+            for name in ("tools", "inputs", "domains", "offered_tools"):
+                record[name] = json.loads(record[name])
             records.append(record)
         return records
 

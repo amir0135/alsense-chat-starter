@@ -10,7 +10,7 @@ flowchart LR
     B <--> G[APIM / AI gateway<br/>future integration]
     G <--> F[Foundry Responses model<br/>optional]
     F -->|function request only| B
-    B --> T[Curated backend tools]
+    B --> T[Curated backend tools<br/>routed per request by domain]
     T --> P[Integration adapters<br/>one interface per service]
     P --> M[Synthetic services + fault switches<br/>default]
     P -. delegated token / OBO .-> A[adapters/alsense<br/>Real Alsense APIs or MCP, future]
@@ -42,6 +42,18 @@ place (`build_services`). The synthetic services are the default; `adapters/alse
 categorized errors (forbidden, not found, unavailable, timeout, stale, unauthenticated) whose user-safe wording the
 UI shows as is. For demos, synthetic fault switches wrap the synthetic services, process-wide
 (`SYNTHETIC_FAULTS`) or per scenario session; they never wrap a real integration.
+
+The assistant's instructions and tools are split into agent modules (`src/alsense_chat/agent/`): core
+instructions plus one folder per domain. Each request is routed to its domains, by slash command, routing words,
+the previous turn or the defaults, and the model receives only those domains' instructions and model tools. A
+report request is offered the site and reporting tools and nothing else. Each tool declares who may call it:
+the model, the user (confirmation, through its own endpoint) or the backend (guided-check lookups). The routed
+domains and offered tools are audited with every chat turn.
+
+Site names are resolved in the backend against the user's permitted sites (`domains/sites.py`). A model may pass a
+site id to a tool only after `get_permitted_sites` resolved exactly that site in the same turn; otherwise the call
+fails as `unverified_site`. The reply guard rejects any claim that something was created, scheduled or sent
+unless a status from the service confirmed it in that turn.
 
 Tool arguments are validated against typed schemas. Sites are filtered by both tenant and allowed-site list.
 Support drafts also validate the alarm/site pair. Prepared actions belong to the session that created them.

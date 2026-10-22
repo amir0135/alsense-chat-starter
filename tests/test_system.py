@@ -53,7 +53,7 @@ def test_system_shows_demo_ready_and_flow_versions(tmp_path):
     ]
     assert status["version"] and status["commit"]
     labels = {item["label"]: item for item in status["items"]}
-    assert labels["Session database"]["value"] == "Connected · SQLite schema v2"
+    assert labels["Session database"]["value"] == "Connected · SQLite schema v3"
     assert labels["Assistant"]["value"] == "Scripted demo assistant (no AI model)"
 
 
@@ -101,4 +101,6 @@ def test_why_this_result_is_user_safe_evidence(tmp_path):
     assert why["Outcome"] == "Guidance for you · connectivity guidance"
     assert why["Data"] == "Synthetic demo data"
     text = json.dumps(result["why"])
-    assert not any(value in text for value in ("site-a", "customer-a", "tool-", "check_site_health", "resolve_sites"))
+    assert not any(
+        value in text for value in ("site-a", "customer-a", "tool-", "check_site_health", "get_permitted_sites")
+    )

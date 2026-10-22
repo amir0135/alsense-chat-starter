@@ -3,5 +3,6 @@
   "kind": "ticket",
   "status": "received",
   "url": "/reference/ticket/example-idempotency-key",
-  "synthetic": true
+  "synthetic": true,
+  "next_run": null
 }

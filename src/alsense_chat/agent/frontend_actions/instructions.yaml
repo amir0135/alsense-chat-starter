@@ -1,0 +1,6 @@
+domain: frontend_actions
+title: Frontend actions
+status: future
+description: |
+  Actions the host application performs on the user's screen, such as applying filters. Waits for the host's
+  capability manifest and contracts; see the frontend action catalog in docs/integration-map.md.

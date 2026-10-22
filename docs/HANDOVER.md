@@ -83,7 +83,10 @@ All settings are in `.env`; `.env.example` explains each one. Restart after chan
 | Customer flows | your own `flows.local.yaml`, loaded with `FLOWS_FILE` (never committed) |
 | Demo scenarios | `src/alsense_chat/scenarios.yaml`, or `SCENARIOS_FILE` |
 | Where real Alsense integrations belong | `src/alsense_chat/adapters/alsense/` and [`integration-map.md`](integration-map.md) |
-| Model instructions and tool descriptions | `src/alsense_chat/alsense.semantic.yaml` |
+| Model instructions and tool declarations, one folder per domain | `src/alsense_chat/agent/` ([guide](../src/alsense_chat/agent/README.md)) |
+| Site resolution, report validation and the scripted report planner | `src/alsense_chat/domains/` |
+| Evaluation cases and the harness that runs them | `evals/` ([format](../evals/README.md)), `src/alsense_chat/evaluation.py` |
+| Evaluation cases written from customer examples | `evals/local/` (ignored by Git) |
 | UI | `src/alsense_chat/static/` |
 
 ## Adding an environment variable
@@ -101,7 +104,8 @@ All settings are in `.env`; `.env.example` explains each one. Restart after chan
 ```bash
 uv run python scripts/dev.py test     # tests, contract fixtures and evaluations
 uv run python scripts/dev.py lint     # formatting, lint, types, JavaScript, protected files
-uv run python scripts/dev.py evals    # only the evaluation cases in evals/
+uv run python scripts/dev.py evals    # only the evaluation cases, with a pass/fail line per case
+uv run python scripts/dev.py evals --mode model evals/local   # your own cases against the Foundry model
 ```
 
 CI runs the same checks, plus the Docker smoke test, the Dev Container build and secret scans.

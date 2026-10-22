@@ -7,7 +7,17 @@ scenario. They wrap the synthetic services only; a real integration is never wra
 from dataclasses import replace
 from datetime import timedelta
 
-from ..contracts import Document, HealthReport, ReportJob, ReportRequest, Site, Submission, SupportRequest, User
+from ..contracts import (
+    Document,
+    HealthReport,
+    ReportJob,
+    ReportRequest,
+    ScheduledReportRequest,
+    Site,
+    Submission,
+    SupportRequest,
+    User,
+)
 from ..errors import Forbidden, NotFound, ServiceTimeout, ServiceUnavailable, Unauthenticated
 from ..interfaces import HealthCheckService, KnowledgeSearch, ReportService, Services, SiteDirectory, SupportService
 
@@ -16,6 +26,7 @@ FAULTS = {
     "unauthenticated": "Synthetic APIs reject the delegated sign-in (401)",
     "site_forbidden": "Site-specific calls return 403: access to the site was revoked",
     "site_not_found": "Site-specific calls return 404: the site no longer exists",
+    "sites_unavailable": "The site directory is down (503)",
     "health_unavailable": "The health-check service is down (503)",
     "health_stale": "Health status is hours old",
     "knowledge_empty": "Guidance search finds no approved answer",
@@ -44,9 +55,11 @@ class _Faulty:
 class FaultySites(_Faulty):
     inner: SiteDirectory
 
-    def search_sites(self, user: User, query: str) -> list[Site]:
+    def permitted_sites(self, user: User) -> list[Site]:
         self.upstream()
-        return self.inner.search_sites(user, query)
+        if "sites_unavailable" in self.faults:
+            raise ServiceUnavailable(self.service)
+        return self.inner.permitted_sites(user)
 
     def active_alarms(self, user: User, site_id: str):
         self.upstream()
@@ -85,15 +98,25 @@ class FaultyReports(_Faulty):
         self.upstream(site=True)
         return self.inner.submit_report(user, request, idempotency_key)
 
+    def schedule_report(self, user: User, request: ScheduledReportRequest, idempotency_key: str) -> Submission:
+        self.upstream(site=True)
+        return self.inner.schedule_report(user, request, idempotency_key)
+
     def report_status(self, user: User, job_id: str) -> ReportJob:
         self.upstream()
         job = self.inner.report_status(user, job_id)
         if "report_failed" in self.faults:
             return job.model_copy(
-                update={"state": "failed", "url": None, "message": "Synthetic failure: the report job did not finish."}
+                update={
+                    "state": "failed",
+                    "url": None,
+                    "completed_at": None,
+                    "expires_at": None,
+                    "message": "Synthetic failure: the report job did not finish.",
+                }
             )
         if "report_processing" in self.faults:
-            return job.model_copy(update={"state": "processing", "url": None})
+            return job.model_copy(update={"state": "processing", "url": None, "completed_at": None, "expires_at": None})
         return job
 
 

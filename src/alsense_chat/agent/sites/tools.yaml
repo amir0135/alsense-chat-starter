@@ -1,0 +1,14 @@
+# caller: model (offered to the model), user (runs only after an explicit user action) or backend (code only).
+tools:
+  get_permitted_sites:
+    caller: model
+    description: |
+      Retrieve the sites the signed-in user may access and match a friendly site name to them. Returns match
+      (one, several, none or all), exact for a single match, the matching sites with their active alarms and,
+      for none, the sites the user can choose instead. Site ids are for tool arguments only.
+    parameters:
+      type: object
+      properties:
+        name: {type: string, description: Friendly site name the user mentioned. Omit it to list every site.}
+      required: []
+      additionalProperties: false

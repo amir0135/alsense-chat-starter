@@ -4,6 +4,7 @@
 # presenter's steps. A step does exactly one thing:
 #   say:    send a chat message (display: the text shown in the conversation instead)
 #   answer: answer the current guided-check step (label: the text shown)
+#   choose: pick one of the answers the assistant offered, by its label
 #   open:   open the report or ticket builder (prefill: field values)
 #   click:  prepare | confirm | edit | status | support (open the support request a guided check prefilled)
 #   set:    change the open report builder (format, report_type, period)
@@ -62,12 +63,12 @@ scenarios:
     demonstrates: The report builder validates inputs, a draft can be replaced before an explicit confirmation, and the job status is checked afterwards.
     persona: alice
     requires_features: [reports]
-    expected: An alarm history report for Demo North is confirmed as CSV, the PDF draft is marked replaced, and the status check says the synthetic report is ready.
+    expected: A temperature log report for Demo North is confirmed as CSV, the PDF draft is marked replaced, and a download link appears with its expiry time.
     steps:
       - open: report
         note: Open the report builder. The single permitted site is fixed.
       - click: prepare
-        note: Prepare the default draft (alarm history, last 30 days, PDF).
+        note: Prepare the default draft (temperature log, last 30 days, PDF).
       - click: edit
         note: Edit details reopens the builder with the draft's values.
       - set:
@@ -76,9 +77,39 @@ scenarios:
       - click: prepare
         note: Prepare the replacement. The first draft is marked replaced and can no longer be sent.
       - click: confirm
-        note: Confirm the CSV draft. Nothing was sent before this step.
+        note: Confirm the CSV draft. Nothing was sent before this step. The download link appears right away.
       - click: status
-        note: Check the report job status.
+        note: Ask for the status in the conversation as well.
+
+  - id: report-real-path
+    title: "Report: ask in plain words"
+    group: journey
+    demonstrates: The checkpoint path. The site is matched against Alice's permitted sites, the report type comes from the catalog, and nothing is created until Alice confirms.
+    persona: alice
+    requires_features: [reports]
+    expected: A temperature report for Demo North covering the last seven days is prepared, confirmed, and offered as a download link that expires 24 hours after it was ready.
+    steps:
+      - say: Create a temperature report for Demo North for the last seven days
+        note: Ask in plain language. The assistant resolves the site, checks the report types and prepares a draft.
+      - click: confirm
+        note: Confirm the draft. Only now is the synthetic report created, and its download link appears.
+      - click: status
+        note: The status in the conversation shows the same link and when it expires.
+
+  - id: scheduled-report
+    title: "Report: schedule a weekly report"
+    group: journey
+    demonstrates: A scheduled report has its own details (frequency, recipients and start date) and is only scheduled after Alice confirms.
+    persona: alice
+    requires_features: [reports]
+    expected: A weekly temperature report for Demo North in Excel, sent to two recipients from tomorrow, is confirmed and its first run date is shown.
+    steps:
+      - say: Schedule a weekly temperature report for Demo North as Excel to operations@example.com and quality@example.com
+        note: Ask in plain language. The assistant checks that this report type can be scheduled weekly.
+      - click: confirm
+        note: Confirm the schedule. Nothing was scheduled before this step.
+      - click: status
+        note: The status shows when the first report goes out.
 
   - id: ambiguous-site
     title: "Failure: ambiguous site"
@@ -99,6 +130,19 @@ scenarios:
         note: This matches both of Carol's sites equally well.
       - answer: Demo East Hall
         note: Choose one. The check continues with that site only.
+
+  - id: report-similar-sites
+    title: "Failure: similar site names in a report request"
+    group: failure
+    demonstrates: Two of Carol's sites match "Demo East", so the assistant asks which one instead of guessing a site.
+    persona: carol
+    requires_features: [reports]
+    expected: The assistant offers Demo East Hall and Demo East Depot. Choosing Demo East Depot prepares the report for that site only.
+    steps:
+      - say: Create an alarm history report for Demo East for the last 30 days
+        note: Carol names part of a site name that fits two of her sites.
+      - choose: Demo East Depot
+        note: Choose a site. The request continues with the stable id of that site, never a guessed one.
 
   - id: invalid-date-range
     title: "Failure: invalid date range"

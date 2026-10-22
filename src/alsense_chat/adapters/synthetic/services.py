@@ -1,5 +1,6 @@
 """Synthetic services. Every name, customer, site, alarm, document and result here is invented."""
 
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 from ..contracts import (
@@ -10,6 +11,8 @@ from ..contracts import (
     ReportJob,
     ReportRequest,
     ReportType,
+    ScheduledReportRequest,
+    ScheduleSupport,
     Site,
     Submission,
     SupportRequest,
@@ -52,9 +55,25 @@ DOCUMENTS = [
 ]
 
 REPORT_TYPES = [
-    ReportType(id="alarm-history", label="Alarm history", formats=["pdf", "csv"]),
+    ReportType(
+        id="temperature-log",
+        label="Temperature log",
+        formats=["pdf", "csv", "xlsx"],
+        schedule=ScheduleSupport(
+            frequencies=["daily", "weekly", "monthly"], end_date_supported=True, max_recipients=10
+        ),
+    ),
+    ReportType(
+        id="alarm-history",
+        label="Alarm history",
+        formats=["pdf", "csv", "xlsx"],
+        schedule=ScheduleSupport(frequencies=["weekly", "monthly"], end_date_supported=True, max_recipients=10),
+    ),
+    # On demand only, so the demo shows that scheduling depends on the report type.
     ReportType(id="site-status", label="Site status", formats=["pdf", "csv"]),
 ]
+# Download links stop working this long after the report is ready.
+LINK_TTL = timedelta(hours=24)
 
 # Demo North and Demo East Hall have an offline gateway; the other sites have no open health checks.
 OPEN_CHECKS = {
@@ -92,14 +111,9 @@ class SyntheticIdentity:
 
 
 class SyntheticSiteDirectory:
-    def search_sites(self, user: User, query: str) -> list[Site]:
-        folded = query.strip().casefold()
+    def permitted_sites(self, user: User) -> list[Site]:
         allowed = permitted(user)
-        return [
-            site
-            for site in user.sites
-            if site.id in allowed and (folded == "*" or folded in site.name.casefold() or folded == site.id)
-        ]
+        return [site for site in user.sites if site.id in allowed]
 
     def active_alarms(self, user: User, site_id: str) -> list[Alarm]:
         if site_id not in permitted(user):
@@ -116,7 +130,7 @@ class SyntheticKnowledge:
 
 
 class SyntheticHealth:
-    def __init__(self, clock=now):
+    def __init__(self, clock: Callable[[], datetime] = now) -> None:
         self.clock = clock
 
     def site_health(self, user: User, site_id: str) -> HealthReport:
@@ -130,12 +144,19 @@ class SyntheticHealth:
 
 
 class SyntheticReports:
+    """Jobs finish immediately. Completion times live in memory, so link expiry restarts with the app."""
+
+    def __init__(self, clock: Callable[[], datetime] = now) -> None:
+        self.clock = clock
+        self.finished: dict[str, datetime] = {}
+
     def report_types(self, user: User) -> list[ReportType]:
         return list(REPORT_TYPES)
 
     def submit_report(self, user: User, request: ReportRequest, idempotency_key: str) -> Submission:
         if request.site_id not in permitted(user):
             raise Forbidden("reports")
+        self.finished.setdefault(idempotency_key, self.clock())
         return Submission(
             id=idempotency_key,
             kind="report",
@@ -144,8 +165,28 @@ class SyntheticReports:
             synthetic=True,
         )
 
+    def schedule_report(self, user: User, request: ScheduledReportRequest, idempotency_key: str) -> Submission:
+        if request.site_id not in permitted(user):
+            raise Forbidden("reports")
+        return Submission(
+            id=idempotency_key,
+            kind="scheduled_report",
+            status="scheduled",
+            url=f"/reference/schedule/{idempotency_key}",
+            synthetic=True,
+            next_run=request.start_date,
+        )
+
     def report_status(self, user: User, job_id: str) -> ReportJob:
-        return ReportJob(id=job_id, state="completed", url=f"/reference/report/{job_id}", synthetic=True)
+        finished = self.finished.setdefault(job_id, self.clock())
+        return ReportJob(
+            id=job_id,
+            state="completed",
+            url=f"/reference/report/{job_id}/download",
+            completed_at=finished,
+            expires_at=finished + LINK_TTL,
+            synthetic=True,
+        )
 
 
 class SyntheticSupport:

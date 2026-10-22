@@ -1,11 +1,38 @@
 [
   {
+    "id": "temperature-log",
+    "label": "Temperature log",
+    "formats": [
+      "pdf",
+      "csv",
+      "xlsx"
+    ],
+    "schedule": {
+      "frequencies": [
+        "daily",
+        "weekly",
+        "monthly"
+      ],
+      "end_date_supported": true,
+      "max_recipients": 10
+    }
+  },
+  {
     "id": "alarm-history",
     "label": "Alarm history",
     "formats": [
       "pdf",
-      "csv"
-    ]
+      "csv",
+      "xlsx"
+    ],
+    "schedule": {
+      "frequencies": [
+        "weekly",
+        "monthly"
+      ],
+      "end_date_supported": true,
+      "max_recipients": 10
+    }
   },
   {
     "id": "site-status",
@@ -13,6 +40,7 @@
     "formats": [
       "pdf",
       "csv"
-    ]
+    ],
+    "schedule": null
   }
 ]

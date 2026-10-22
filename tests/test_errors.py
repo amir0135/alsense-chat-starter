@@ -10,11 +10,12 @@ from alsense_chat.adapters import build_services, synthetic
 from alsense_chat.adapters.errors import ModelUnavailable, NotConfiguredError
 from alsense_chat.adapters.interfaces import Services
 from alsense_chat.adapters.synthetic import FAULTS, with_faults
+from alsense_chat.agent import load_agent
 from alsense_chat.app import create_app
 from alsense_chat.config import Settings
 from alsense_chat.runner import FoundryRunner
 from alsense_chat.store import Store
-from alsense_chat.tools import Context, tool_definitions
+from alsense_chat.tools import Context
 
 
 @pytest.mark.parametrize(
@@ -125,7 +126,7 @@ def test_status_of_an_unsubmitted_report_says_it_is_not_sent(tmp_path):
     with app_client(tmp_path) as client:
         headers = login(client)
         draft = reply(client, headers, "/report " + json.dumps(report_payload()))["actions"][0]
-        assert reply(client, headers, f"/status {draft['id']}")["text"].startswith("This report hasn't been submitted")
+        assert reply(client, headers, f"/status {draft['id']}")["text"].startswith("This report hasn't been confirmed")
 
 
 @pytest.mark.parametrize(
@@ -175,8 +176,11 @@ def test_feature_flags_turn_capabilities_off_everywhere(tmp_path):
         assert reply(client, headers, "/ticket " + json.dumps(ticket))["status"] == "out_of_scope"
     with app_client(tmp_path, features=frozenset({"reports"})) as client:
         assert reply(client, login(client), "/flows")["text"] == "Guided checks are turned off in this demo."
-    names = {tool["name"] for tool in tool_definitions(frozenset({"troubleshooting"}))}
-    assert names == {"search_docs", "resolve_sites"}
+    every_domain = [module.name for module in load_agent().active()]
+    assert load_agent().model_tools(every_domain, frozenset({"troubleshooting"})) == (
+        "get_permitted_sites",
+        "search_docs",
+    )
 
 
 def test_faults_are_validated_and_only_wrap_synthetic_services(tmp_path):

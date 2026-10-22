@@ -18,6 +18,7 @@ let activeScenario = null;
 let sessionScenario = "";
 const siteAlarms = new Map();
 const actionCards = new WeakMap();
+const replyChoices = new WeakMap();
 const DEFAULT_PLACEHOLDER = document.getElementById("message").placeholder;
 
 const STATUS_LABELS = {
@@ -30,28 +31,40 @@ const STATUS_LABELS = {
 /* Failures worth handing to a person: a support request can carry what was tried. */
 const SUPPORT_CATEGORIES = new Set(["unavailable", "timeout", "stale", "not_found"]);
 const REPORT_STATES = {
-  prepared: "Not submitted yet",
+  prepared: "Not confirmed yet",
   processing: "Still being prepared",
   completed: "Ready (synthetic)",
   failed: "Failed",
+  scheduled: "Scheduled (synthetic)",
 };
 const TOOL_PROGRESS = {
-  resolve_sites: "Checking the sites available in this session…",
+  get_permitted_sites: "Checking the sites you can access…",
   search_docs: "Looking through the operations guidance…",
   list_report_types: "Checking the available reports…",
   get_report_status: "Checking the report status…",
   check_site_health: "Checking the site’s health checks…",
   prepare_report: "Preparing the report for review…",
+  prepare_scheduled_report: "Preparing the schedule for review…",
   prepare_support_ticket: "Preparing the support request for review…",
 };
 const ACTION_COPY = {
   report: {
     title: "Report ready for review", confirm: "Confirm synthetic report", retry: "Retry synthetic report",
     final: "Synthetic report ready", link: "Open synthetic report", progress: "Report progress",
+    pending: "Nothing has been sent. Confirm below to create this synthetic report.",
+    done: "Submitted · synthetic", sent: "Submitted to the synthetic demo. No real report was created.",
+  },
+  scheduled_report: {
+    title: "Schedule ready for review", confirm: "Confirm synthetic schedule", retry: "Retry synthetic schedule",
+    final: "Schedule active", link: "Open synthetic schedule", progress: "Schedule progress",
+    pending: "Nothing is scheduled yet. Confirm below to create this synthetic schedule.",
+    done: "Scheduled · synthetic", sent: "Scheduled in the synthetic demo. No real report will be sent.",
   },
   ticket: {
     title: "Support request ready for review", confirm: "Confirm synthetic request", retry: "Retry synthetic request",
     final: "Synthetic request received", link: "Open synthetic record", progress: "Support request progress",
+    pending: "Nothing has been sent. Confirm below to submit this synthetic demo action.",
+    done: "Submitted · synthetic", sent: "Submitted to the synthetic demo. No real support request was sent.",
   },
 };
 const ACTION_STATES = {
@@ -62,9 +75,15 @@ const ACTION_STATES = {
   replaced: { badge: "Replaced", steps: ["is-done", "", ""] },
 };
 const REPORT_NOTES = {
-  "alarm-history": "Alarm events for the chosen period",
-  "site-status": "Site status for the chosen period",
+  "temperature-log": "Temperature readings",
+  "alarm-history": "Alarm events",
+  "site-status": "Site status",
 };
+const FORMAT_LABELS = { pdf: "PDF", csv: "CSV", xlsx: "Excel" };
+const FREQUENCY_LABELS = { daily: "Daily", weekly: "Weekly", monthly: "Monthly" };
+const EMAIL = /^[A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+const STATUS_POLLS = 8;
+const STATUS_POLL_MS = 1500;
 const DEFAULT_PERIOD = "last-30";
 const PERIODS = {
   "last-7": (today) => [addDays(today, -6), today],
@@ -73,6 +92,9 @@ const PERIODS = {
   "last-month": (today) => [new Date(today.getFullYear(), today.getMonth() - 1, 1), new Date(today.getFullYear(), today.getMonth(), 0)],
 };
 const dateFormat = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric" });
+const dateTimeFormat = new Intl.DateTimeFormat(undefined, {
+  day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+});
 
 function startOfToday() {
   const now = new Date();
@@ -141,7 +163,38 @@ function siteName(siteId) {
 
 function reportTypeLabel(typeId) {
   return reportTypes?.find((item) => item.id === typeId)?.label
-    || ({ "alarm-history": "Alarm history", "site-status": "Site status" })[typeId] || "Report";
+    || ({ "temperature-log": "Temperature log", "alarm-history": "Alarm history", "site-status": "Site status" })[typeId]
+    || "Report";
+}
+
+function formatLabel(format) {
+  return FORMAT_LABELS[format] || String(format || "").toUpperCase();
+}
+
+function dayLabel(value) {
+  const date = parseIsoDate(value);
+  return date ? dateFormat.format(date) : "";
+}
+
+function parseRecipients(text) {
+  const items = String(text || "").split(/[\s,;]+/).map((item) => item.trim()).filter(Boolean);
+  const recipients = [...new Map(items.map((item) => [item.toLowerCase(), item])).values()];
+  return { recipients, invalid: recipients.filter((item) => !EMAIL.test(item)) };
+}
+
+/* The service sets the expiry; the widget only shows it, so a different lifetime upstream shows correctly. */
+function linkExpiry(result) {
+  const ready = new Date(result?.completed_at);
+  const expires = new Date(result?.expires_at);
+  if (Number.isNaN(ready.getTime()) || Number.isNaN(expires.getTime())) {
+    return { expired: false, text: "The download link expires after a limited time." };
+  }
+  if (expires.getTime() <= Date.now()) {
+    return { expired: true, text: `This link expired on ${dateTimeFormat.format(expires)}. Prepare the report again for a new link.` };
+  }
+  const hours = Math.round((expires - ready) / 3600000);
+  const lifetime = hours === 1 ? "1 hour" : `${hours} hours`;
+  return { expired: false, text: `Expires ${lifetime} after the report was ready · ${dateTimeFormat.format(expires)}` };
 }
 
 function showError(message) {
@@ -261,8 +314,9 @@ function textParagraphs(parent, text, className) {
   }
 }
 
-function renderSites(data, parent, text) {
-  if (!Array.isArray(data) || data.length === 0) return;
+function renderSites(result, parent, text) {
+  const data = Array.isArray(result) ? result : Array.isArray(result?.sites) ? result.sites : [];
+  if (data.length === 0) return;
   for (const site of data) {
     if (site?.id && Array.isArray(site.alarms)) {
       siteAlarms.set(site.id, site.alarms.filter((alarm) => alarm.status === "active").map((alarm) => alarm.label).filter(Boolean));
@@ -291,8 +345,11 @@ function renderReportTypes(data, parent) {
   for (const report of data) {
     const item = node("li");
     item.append(node("strong", "", report.label || "Report"));
-    const formats = Array.isArray(report.formats) ? report.formats.map((format) => format.toUpperCase()).join(", ") : "";
-    if (formats) item.append(node("span", "", formats));
+    const formats = Array.isArray(report.formats) ? report.formats.map(formatLabel).join(", ") : "";
+    const frequencies = Array.isArray(report.schedule?.frequencies)
+      ? report.schedule.frequencies.map((value) => FREQUENCY_LABELS[value] || value).join(", ") : "";
+    const schedule = frequencies ? `Schedule: ${frequencies.toLowerCase()}` : "On demand only";
+    item.append(node("span", "", [formats, schedule].filter(Boolean).join(" · ")));
     list.append(item);
   }
   parent.append(list);
@@ -310,11 +367,65 @@ function renderDocuments(data, parent) {
   parent.append(row);
 }
 
+/* The confirmed result: a download link with its expiry, a schedule's first run, or why there is none. */
+function renderReportResult(container, status, { live = false } = {}) {
+  container.querySelector(".report-result")?.remove();
+  const box = node("div", "report-result");
+  const result = status?.result || {};
+  if (status?.state === "completed") {
+    const expiry = linkExpiry(result);
+    if (approvedLink(result.url) && !expiry.expired) {
+      const link = node("a", "download-link");
+      const glyph = node("span", "download-glyph", "↓");
+      glyph.setAttribute("aria-hidden", "true");
+      link.append(glyph, document.createTextNode("Download synthetic report"));
+      link.href = result.url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      box.append(link);
+    }
+    box.append(node("p", expiry.expired ? "download-note is-expired" : "download-note", expiry.text));
+  } else if (status?.state === "processing") {
+    const note = node("p", "download-note is-pending");
+    if (live) note.append(node("span", "inline-spinner"));
+    note.append(document.createTextNode(live
+      ? "Preparing the report. The download link appears here when it’s ready."
+      : "Still being prepared. Check again in a moment for the download link."));
+    box.append(note);
+  } else if (status?.state === "failed") {
+    box.append(node("p", "download-note is-failed", "The report job failed, so there’s no file to download."));
+  } else if (status?.state === "scheduled") {
+    const first = dayLabel(result.next_run);
+    box.append(node("p", "download-note", first ? `First report on ${first}.` : "The schedule is active."));
+    if (approvedLink(result.url)) addLink(box, "Open synthetic schedule", result.url);
+  } else {
+    return;
+  }
+  container.append(box);
+}
+
 function renderStatus(data, parent) {
   const state = typeof data?.state === "string" ? data.state : "";
-  parent.append(node("p", "source-excerpt", `Report status: ${REPORT_STATES[state] || "unavailable"}.`));
+  const subject = data?.kind === "scheduled_report" ? "Schedule" : "Report";
+  parent.append(node("p", "source-excerpt", `${subject} status: ${REPORT_STATES[state] || "unavailable"}.`));
   if (typeof data?.result?.message === "string") parent.append(node("p", "source-excerpt", data.result.message));
-  if (data?.result?.url) addLink(parent, "Open synthetic report view", data.result.url);
+  renderReportResult(parent, data);
+}
+
+async function reportStatus(actionId) {
+  return (await api(`/api/actions/${encodeURIComponent(actionId)}/status`)).json();
+}
+
+/* Shows the result as soon as the service has it; a job still running is checked again a few times. */
+async function followReport(actionId, container) {
+  for (let attempt = 0; attempt < STATUS_POLLS; attempt += 1) {
+    const status = await reportStatus(actionId);
+    const last = attempt === STATUS_POLLS - 1;
+    renderReportResult(container, status, { live: status.state === "processing" && !last });
+    if (status.state !== "processing" || !container.isConnected) return status;
+    if (!last) await new Promise((resolve) => setTimeout(resolve, STATUS_POLL_MS));
+  }
+  return null;
 }
 
 function renderHealth(data, parent) {
@@ -334,14 +445,16 @@ function renderHealth(data, parent) {
 
 function renderEvidence(reply, parent) {
   const sources = Array.isArray(reply.sources) ? reply.sources : [];
+  /* Lookups behind a draft or a question are summarized by the card or the choices; "Why this result?" lists them. */
+  const quiet = (reply.actions || []).length > 0 || reply.status === "clarification";
   for (const source of sources) {
     const content = node("div", "answer-data");
     switch (source.tool) {
-      case "resolve_sites":
-        renderSites(source.data, content, reply.text);
+      case "get_permitted_sites":
+        if (!quiet) renderSites(source.data, content, reply.text);
         break;
       case "list_report_types":
-        renderReportTypes(source.data, content);
+        if (!quiet) renderReportTypes(source.data, content);
         break;
       case "search_docs":
         renderDocuments(source.data, content);
@@ -359,8 +472,61 @@ function renderEvidence(reply, parent) {
   }
 }
 
+/* Answers to a clarification. Each carries the complete request, so choosing one needs no hidden state. */
+function renderChoices(reply, parent) {
+  const choices = Array.isArray(reply.choices) ? reply.choices.filter((item) => item?.label && item?.message) : [];
+  if (choices.length === 0) return;
+  const sites = reply.asks_for === "site";
+  const group = node("div", "reply-choices");
+  group.setAttribute("role", "group");
+  group.setAttribute("aria-label", sites ? "Your sites" : "Your answer");
+  for (const choice of choices) {
+    const button = node("button", sites ? "flow-option site-option" : "flow-option");
+    button.type = "button";
+    if (sites) {
+      const glyph = node("span", "site-glyph", "⌖");
+      glyph.setAttribute("aria-hidden", "true");
+      button.append(glyph);
+    }
+    button.append(document.createTextNode(choice.label));
+    replyChoices.set(button, choice);
+    button.addEventListener("click", () => chooseReply(choice, button));
+    group.append(button);
+  }
+  parent.append(group);
+}
+
+function chooseReply(choice, button) {
+  if (busy) {
+    showError("Wait for the current answer to finish.");
+    return Promise.resolve(false);
+  }
+  button?.closest(".reply-choices")?.querySelectorAll("button").forEach((item) => { item.disabled = true; });
+  button?.setAttribute("aria-pressed", "true");
+  return send(choice.message, choice.label).catch((error) => { showError(error.message); return false; });
+}
+
+/* Details that are easier to give in the form, such as recipients, open the builder with the rest filled in. */
+function renderBuilderPrompt(reply, parent) {
+  const prefill = reply.builder;
+  if (!prefill || typeof prefill !== "object" || !features.has("reports")) return;
+  const scheduled = prefill.mode === "scheduled";
+  const row = node("div", "follow-ups");
+  const label = reply.asks_for === "recipients" ? "Add recipients in the form" : "Finish in the report form";
+  const button = node("button", "follow-up", label);
+  button.type = "button";
+  button.addEventListener("click", () => {
+    openDraft(scheduled ? "scheduled_report" : "report", prefill, {
+      fresh: true, focus: reply.asks_for === "recipients" ? "recipients" : "",
+    }).catch((error) => showError(error.message));
+  });
+  row.append(button);
+  parent.append(row);
+}
+
 function renderFollowUps(reply, parent) {
   if ((reply.actions || []).length || !user || reply.status === "out_of_scope") return;
+  if ((reply.choices || []).length || reply.builder) return;
   const tools = new Set((reply.sources || []).map((source) => source.tool));
   const options = [];
   const failed = reply.status === "error";
@@ -369,7 +535,7 @@ function renderFollowUps(reply, parent) {
     options.push(["Prepare support request", "ticket"]);
   }
   if (!failed && features.has("reports")
-    && (tools.has("search_docs") || tools.has("resolve_sites") || tools.has("list_report_types"))) {
+    && (tools.has("search_docs") || tools.has("get_permitted_sites") || tools.has("list_report_types"))) {
     options.push(["Prepare a report", "report"]);
   }
   if (options.length === 0) return;
@@ -383,12 +549,29 @@ function renderFollowUps(reply, parent) {
   parent.append(row);
 }
 
+function scheduleSpan(payload) {
+  const frequency = FREQUENCY_LABELS[payload.frequency] || "";
+  const start = dayLabel(payload.start_date);
+  const end = dayLabel(payload.end_date);
+  if (!frequency || !start) return "";
+  return `${frequency} from ${start}${end ? ` until ${end}` : ""}`;
+}
+
+function recipientCount(count) {
+  return `${count} ${count === 1 ? "recipient" : "recipients"}`;
+}
+
 function draftRequestLabel(kind, payload) {
   const site = siteName(payload.site_id) || "your permitted site";
+  const type = reportTypeLabel(payload.report_type).toLowerCase();
+  const article = /^[aeiou]/.test(type) ? "an" : "a";
   if (kind === "report") {
-    const type = reportTypeLabel(payload.report_type).toLowerCase();
-    const article = /^[aeiou]/.test(type) ? "an" : "a";
-    return `Prepare ${article} ${type} report for ${site} · ${formatPeriod(payload.start, payload.end)} · ${payload.format.toUpperCase()}`;
+    return `Prepare ${article} ${type} report for ${site} · ${formatPeriod(payload.start, payload.end)} · ${formatLabel(payload.format)}`;
+  }
+  if (kind === "scheduled_report") {
+    const count = recipientCount((payload.recipients || []).length);
+    const span = scheduleSpan(payload).replace(/^\w+/, (word) => word.toLowerCase());
+    return `Schedule ${article} ${type} report for ${site} · ${span} · ${formatLabel(payload.format)} · ${count}`;
   }
   return `Prepare a support request for ${site}: ${payload.summary}`;
 }
@@ -401,20 +584,31 @@ function actionRows(kind, payload) {
       ["Site", site],
       ["Report", reportTypeLabel(payload.report_type)],
       ["Period", period ? `${period} · ${periodLength(payload.start, payload.end)}` : ""],
-      ["Format", String(payload.format || "").toUpperCase()],
+      ["Format", formatLabel(payload.format)],
+    ];
+  }
+  if (kind === "scheduled_report") {
+    return [
+      ["Site", site],
+      ["Report", reportTypeLabel(payload.report_type)],
+      ["Repeats", scheduleSpan(payload) + (payload.end_date ? "" : " · no end date")],
+      ["Format", formatLabel(payload.format)],
+      ["Send to", (payload.recipients || []).join("\n")],
     ];
   }
   return [["Site", site], ["Alarm", payload.alarm_id], ["Summary", payload.summary], ["Steps tried", payload.steps_tried]];
 }
 
 function renderAction(action, parent) {
-  const kind = action.kind === "report" ? "report" : "ticket";
+  const kind = ACTION_COPY[action.kind] ? action.kind : "ticket";
   const copy = ACTION_COPY[kind];
+  const reporting = kind !== "ticket";
   const payload = action.payload || {};
   const card = node("section", "action-card");
   const head = node("div", "action-head");
   const titles = node("div");
-  titles.append(node("h3", "", copy.title), node("p", "", "Nothing has been sent. Confirm below to submit this synthetic demo action."));
+  const subtitle = node("p", "", copy.pending);
+  titles.append(node("h3", "", copy.title), subtitle);
   const badge = node("span", "action-badge");
   head.append(titles, badge);
 
@@ -451,7 +645,8 @@ function renderAction(action, parent) {
   const setState = (name) => {
     const config = ACTION_STATES[name];
     card.dataset.state = name;
-    badge.textContent = config.badge;
+    badge.textContent = name === "submitted" ? copy.done : config.badge;
+    subtitle.textContent = name === "submitted" ? copy.sent : copy.pending;
     stepItems.forEach((item, index) => {
       item.className = config.steps[index];
       if (config.steps[index] === "is-current" || config.steps[index] === "is-busy") item.setAttribute("aria-current", "step");
@@ -461,7 +656,9 @@ function renderAction(action, parent) {
   };
   setState("prepared");
 
-  const checkStatus = () => send(`/status ${action.id}`, "Check the status of this report");
+  const checkStatus = () => send(`/status ${action.id}`,
+    kind === "scheduled_report" ? "Check the status of this schedule" : "Check the status of this report");
+  const result = node("div", "card-result");
 
   /* Returns whether the synthetic submission succeeded; failures stay visible on the card. */
   const confirmAction = async () => {
@@ -474,26 +671,34 @@ function renderAction(action, parent) {
     state.hidden = true;
     state.classList.remove("failed");
     try {
-      const result = await (await api(`/api/actions/${encodeURIComponent(action.id)}/submit`, { confirmed: true })).json();
+      const submission = await (await api(`/api/actions/${encodeURIComponent(action.id)}/submit`, { confirmed: true })).json();
       setState("submitted");
-      state.textContent = "Submitted to the synthetic demo. No real report or support request was sent.";
-      state.hidden = false;
+      state.hidden = true;
       buttons.replaceChildren();
-      if (approvedLink(result.url)) {
+      if (!reporting && approvedLink(submission.url)) {
         const open = node("a", "secondary-action", copy.link);
         const arrow = node("span", "", "↗");
         arrow.setAttribute("aria-hidden", "true");
         open.append(arrow);
-        open.href = result.url;
+        open.href = submission.url;
         open.target = "_blank";
         open.rel = "noopener noreferrer";
         buttons.append(open);
       }
-      if (kind === "report") {
+      if (reporting) {
         const status = node("button", "secondary-action", "Check status");
         status.type = "button";
         status.addEventListener("click", () => checkStatus().catch((error) => showError(error.message)));
         buttons.append(status);
+        if (kind === "scheduled_report") {
+          renderReportResult(result, { state: "scheduled", result: submission });
+        } else {
+          /* The link is the point of the report: fetch it right away instead of waiting for "Check status". */
+          followReport(action.id, result).catch((error) => {
+            result.replaceChildren(node("p", "download-note is-failed",
+              `${error.message} Use Check status to try again.`));
+          });
+        }
       }
       return true;
     } catch (error) {
@@ -528,7 +733,7 @@ function renderAction(action, parent) {
     edit: editAction,
     status: checkStatus,
   });
-  card.append(head, steps, details, buttons, state);
+  card.append(head, steps, details, result, buttons, state);
   parent.append(card);
 }
 
@@ -684,6 +889,8 @@ function renderReply(reply) {
   } else {
     renderEvidence(reply, body);
     for (const action of reply.actions || []) renderAction(action, body);
+    renderChoices(reply, body);
+    renderBuilderPrompt(reply, body);
     renderFollowUps(reply, body);
   }
   renderWhy(reply, body);
@@ -724,6 +931,8 @@ async function send(message, displayText = message) {
   if (busy) throw new Error("Wait for the current answer to finish.");
   if (!questionText) return;
   if (!/^\/flows?(\s|$)/.test(questionText)) setActiveFlow(null);
+  /* Only the newest question can be answered with its buttons. */
+  document.querySelectorAll("#messages .reply-choices button").forEach((button) => { button.disabled = true; });
   busy = true;
   lastMessage = questionText;
   clearError();
@@ -929,20 +1138,72 @@ function renderReportChoices(selectedId) {
     mark.setAttribute("aria-hidden", "true");
     const copy = node("span", "choice-copy");
     copy.append(node("strong", "", report.label || "Report"));
-    const formats = Array.isArray(report.formats) ? report.formats.map((format) => format.toUpperCase()).join(" or ") : "";
+    const formats = Array.isArray(report.formats) ? report.formats.map(formatLabel).join(", ") : "";
     const note = node("small");
     if (REPORT_NOTES[report.id]) note.append(document.createTextNode(`${REPORT_NOTES[report.id]}${formats ? " · " : ""}`));
     if (formats) note.append(node("span", "nowrap", formats));
+    if (!report.schedule) note.append(node("span", "schedule-note", " · On demand only"));
     if (note.childNodes.length) copy.append(note);
     card.append(input, mark, copy);
     container.append(card);
   }
 }
 
+function reportMode() {
+  return $("draft-form").querySelector('input[name="mode"]:checked')?.value === "scheduled" ? "scheduled" : "on-demand";
+}
+
+function selectedReportType() {
+  const typeId = $("draft-form").querySelector('input[name="report_type"]:checked')?.value;
+  return reportTypes?.find((item) => item.id === typeId) || null;
+}
+
+/* Scheduled mode offers only report types the service can schedule, with their frequencies and end date. */
+function applyMode() {
+  const form = $("draft-form");
+  const scheduled = reportMode() === "scheduled";
+  $("report-fields").dataset.mode = scheduled ? "scheduled" : "on-demand";
+  $("period-row").hidden = scheduled;
+  $("schedule-fields").hidden = !scheduled;
+  for (const input of $("period-row").querySelectorAll("input")) input.disabled = scheduled;
+  const types = [...form.querySelectorAll('input[name="report_type"]')];
+  for (const input of types) {
+    input.disabled = scheduled && !reportTypes.find((item) => item.id === input.value)?.schedule;
+  }
+  if (!types.some((input) => input.checked && !input.disabled)) {
+    const first = types.find((input) => !input.disabled);
+    if (first) first.checked = true;
+  }
+  syncFormats();
+  syncSchedule();
+}
+
+function syncSchedule() {
+  const form = $("draft-form");
+  const scheduled = reportMode() === "scheduled";
+  const schedule = selectedReportType()?.schedule;
+  for (const input of $("schedule-fields").querySelectorAll("input")) input.disabled = !scheduled;
+  const frequencies = [...form.querySelectorAll('input[name="frequency"]')];
+  for (const input of frequencies) input.disabled = !scheduled || !schedule?.frequencies?.includes(input.value);
+  if (!frequencies.some((input) => input.checked && !input.disabled)) {
+    const first = frequencies.find((input) => !input.disabled);
+    if (first) first.checked = true;
+  }
+  const endDate = Boolean(schedule?.end_date_supported);
+  $("end-date-field").hidden = !endDate;
+  $("end-date-help").hidden = !endDate;
+  form.elements.end_date.disabled = !scheduled || !endDate;
+  if (!endDate) form.elements.end_date.value = "";
+  const today = isoDate(startOfToday());
+  if (scheduled && !form.elements.start_date.value) form.elements.start_date.value = isoDate(addDays(startOfToday(), 1));
+  form.elements.start_date.min = today;
+  form.elements.end_date.min = form.elements.start_date.value || today;
+}
+
 function syncFormats() {
   const form = $("draft-form");
   const typeId = form.querySelector('input[name="report_type"]:checked')?.value;
-  const allowed = reportTypes?.find((item) => item.id === typeId)?.formats || ["pdf", "csv"];
+  const allowed = reportTypes?.find((item) => item.id === typeId)?.formats || ["pdf", "csv", "xlsx"];
   const inputs = [...form.querySelectorAll('input[name="format"]')];
   for (const input of inputs) input.disabled = !allowed.includes(input.value);
   if (!inputs.some((input) => input.checked && !input.disabled)) {
@@ -974,6 +1235,37 @@ function readReportPayload() {
   };
 }
 
+function readSchedulePayload() {
+  const form = $("draft-form");
+  const payload = {
+    site_id: form.elements.site_id.value,
+    report_type: form.querySelector('input[name="report_type"]:checked')?.value || "",
+    format: form.querySelector('input[name="format"]:checked')?.value || "",
+    frequency: form.querySelector('input[name="frequency"]:checked:not(:disabled)')?.value || "",
+    recipients: parseRecipients(form.elements.recipients.value).recipients,
+    start_date: form.elements.start_date.value,
+  };
+  if (!form.elements.end_date.disabled && form.elements.end_date.value) payload.end_date = form.elements.end_date.value;
+  return payload;
+}
+
+/* Mirrors the backend's schedule checks so problems surface before preparing. */
+function scheduleProblems(payload) {
+  const { recipients, invalid } = parseRecipients($("draft-form").elements.recipients.value);
+  const limit = selectedReportType()?.schedule?.max_recipients || 25;
+  let people = "";
+  if (recipients.length === 0) people = "Add at least one email address.";
+  else if (invalid.length) people = `Check “${invalid[0]}”. It isn’t a complete email address.`;
+  else if (recipients.length > limit) people = `This report can go to up to ${limit} recipients.`;
+  let dates = "";
+  const start = parseIsoDate(payload.start_date);
+  const end = payload.end_date ? parseIsoDate(payload.end_date) : null;
+  if (!start) dates = "Choose the date of the first report.";
+  else if (dayNumber(start) < dayNumber(startOfToday())) dates = "The first report can’t be in the past.";
+  else if (payload.end_date && (!end || dayNumber(end) < dayNumber(start))) dates = "“Until” must be on or after the first report.";
+  return { people, dates };
+}
+
 function setSummary(text, animate) {
   const summary = $("draft-summary-text");
   if (summary.textContent === text) return;
@@ -984,7 +1276,40 @@ function setSummary(text, animate) {
   summary.classList.add("is-updated");
 }
 
+function updateScheduleBuilder(animate) {
+  const form = $("draft-form");
+  const payload = readSchedulePayload();
+  const { people, dates } = scheduleProblems(payload);
+  /* An empty list is explained in the summary; a list with a mistake is explained at the field. */
+  const showPeople = Boolean(people) && Boolean(form.elements.recipients.value.trim());
+  $("recipients-error").textContent = showPeople ? people : "";
+  $("recipients-error").hidden = !showPeople;
+  if (showPeople) form.elements.recipients.setAttribute("aria-invalid", "true");
+  else form.elements.recipients.removeAttribute("aria-invalid");
+  $("schedule-error").textContent = dates;
+  $("schedule-error").hidden = !dates;
+  for (const input of [form.elements.start_date, form.elements.end_date]) {
+    if (dates) input.setAttribute("aria-invalid", "true");
+    else input.removeAttribute("aria-invalid");
+  }
+  const span = scheduleSpan(payload);
+  $("schedule-readout").replaceChildren();
+  if (!dates && span) {
+    $("schedule-readout").append(node("strong", "", span), document.createTextNode(payload.end_date ? "" : " · no end date"));
+  }
+  $("schedule-readout").hidden = Boolean(dates) || !span;
+  const parts = [reportTypeLabel(payload.report_type), siteName(payload.site_id)];
+  parts.push(dates ? "Check the dates" : span, formatLabel(payload.format));
+  parts.push(people ? (payload.recipients.length ? "Check the recipients" : "Add recipients") : recipientCount(payload.recipients.length));
+  setSummary(parts.filter(Boolean).join(" · "), animate);
+  $("prepare-draft").disabled = Boolean(people || dates) || !payload.report_type || !payload.format || !payload.frequency;
+}
+
 function updateReportBuilder({ animate = false } = {}) {
+  if (reportMode() === "scheduled") {
+    updateScheduleBuilder(animate);
+    return;
+  }
   const form = $("draft-form");
   const payload = readReportPayload();
   const problem = periodProblem(payload.start, payload.end);
@@ -1014,10 +1339,12 @@ function closeDraft() {
   if (!$("message").disabled) $("message").focus();
 }
 
-async function openDraft(kind, prefill = null, { fromFlow = false, fresh = false } = {}) {
+async function openDraft(requested, prefill = null, { fromFlow = false, fresh = false, focus = "" } = {}) {
   if (!user) throw new Error("Start a synthetic demo session first.");
   if (busy) throw new Error("Wait for the current answer to finish.");
   clearError();
+  const scheduled = requested === "scheduled_report" || prefill?.mode === "scheduled";
+  const kind = requested === "ticket" ? "ticket" : "report";
   if (kind === "report" && !reportTypes) reportTypes = await (await api("/api/report-types")).json();
   draftKind = kind;
   replacingCard = null;
@@ -1037,22 +1364,37 @@ async function openDraft(kind, prefill = null, { fromFlow = false, fresh = false
   }
   const multipleSites = user.sites.length > 1;
   if (kind === "report") {
+    form.elements.mode.value = scheduled ? "scheduled" : "on-demand";
     renderReportChoices(prefill?.report_type);
-    syncFormats();
+    applyMode();
     for (const input of form.querySelectorAll('input[name="format"]')) {
       if (input.value === prefill?.format && !input.disabled) input.checked = true;
     }
-    const period = prefill ? matchPeriod(prefill.start, prefill.end) : DEFAULT_PERIOD;
-    form.elements.period.value = period;
-    if (period === "custom") {
-      form.elements.start.value = prefill.start;
-      form.elements.end.value = prefill.end;
+    if (scheduled) {
+      for (const input of form.querySelectorAll('input[name="frequency"]')) {
+        if (input.value === prefill?.frequency && !input.disabled) input.checked = true;
+      }
+      form.elements.recipients.value = (prefill?.recipients || []).join(", ");
+      form.elements.start_date.value = prefill?.start_date || isoDate(addDays(startOfToday(), 1));
+      if (!form.elements.end_date.disabled) form.elements.end_date.value = prefill?.end_date || "";
+      syncSchedule();
+      applyPeriod(DEFAULT_PERIOD);
+    } else {
+      const period = prefill?.start ? matchPeriod(prefill.start, prefill.end) : DEFAULT_PERIOD;
+      form.elements.period.value = period;
+      if (period === "custom") {
+        form.elements.start.value = prefill.start;
+        form.elements.end.value = prefill.end;
+      }
+      applyPeriod(period);
     }
-    applyPeriod(period);
-    $("draft-title").textContent = prefill && !fresh ? "Edit report details" : "Prepare a report";
+    const editing = prefill && !fresh;
+    $("draft-title").textContent = scheduled
+      ? (editing ? "Edit schedule details" : "Schedule a report")
+      : (editing ? "Edit report details" : "Prepare a report");
     $("draft-description").textContent = multipleSites
-      ? "Choose the site, report, period and format for your draft."
-      : "Choose the report, period and format for your draft.";
+      ? "Choose the site, report and delivery for your draft."
+      : "Choose the report and its delivery for your draft.";
     $("draft-summary-icon").textContent = "▤";
     updateReportBuilder();
   } else {
@@ -1068,8 +1410,9 @@ async function openDraft(kind, prefill = null, { fromFlow = false, fresh = false
     $("prepare-draft").disabled = false;
   }
   panel.hidden = false;
-  const focusTarget = multipleSites ? form.elements.site_id
-    : kind === "report" ? form.querySelector('input[name="report_type"]:checked') : form.elements.summary;
+  const focusTarget = focus === "recipients" ? form.elements.recipients
+    : multipleSites ? form.elements.site_id
+      : kind === "report" ? form.querySelector('input[name="report_type"]:checked') : form.elements.summary;
   focusTarget?.focus();
   scrollToLatest();
 }
@@ -1151,19 +1494,36 @@ $("draft-form").addEventListener("change", (event) => {
     setSummary(`Support request for ${siteName(value)}`, true);
   }
   if (draftKind !== "report") return;
+  if (name === "mode") applyMode();
   if (name === "period") applyPeriod(value, { focusCustom: value === "custom" });
-  if (name === "report_type") syncFormats();
+  if (name === "report_type") {
+    syncFormats();
+    syncSchedule();
+  }
+  if (name === "start_date") syncSchedule();
   updateReportBuilder({ animate: true });
 });
 $("draft-form").addEventListener("input", (event) => {
-  if (draftKind === "report" && (event.target.name === "start" || event.target.name === "end")) updateReportBuilder();
+  if (draftKind === "report" && ["start", "end", "recipients", "start_date", "end_date"].includes(event.target.name)) {
+    updateReportBuilder();
+  }
 });
 /* Returns whether a draft was prepared. Builder problems stay inline and nothing is sent. */
 async function prepareDraft() {
   const form = $("draft-form");
   if ($("draft-panel").hidden) throw new Error("Open the report or support form first.");
   let payload;
-  if (draftKind === "report") {
+  let kind = draftKind;
+  if (draftKind === "report" && reportMode() === "scheduled") {
+    kind = "scheduled_report";
+    payload = readSchedulePayload();
+    updateReportBuilder();
+    const { people, dates } = scheduleProblems(payload);
+    if (people || dates || !payload.report_type || !payload.format || !payload.frequency) {
+      (people ? form.elements.recipients : form.elements.start_date).focus();
+      return false;
+    }
+  } else if (draftKind === "report") {
     payload = readReportPayload();
     updateReportBuilder();
     if (periodProblem(payload.start, payload.end) || !payload.report_type || !payload.format) {
@@ -1180,14 +1540,15 @@ async function prepareDraft() {
     const alarm = form.elements.alarm_id.value.trim();
     if (alarm) payload.alarm_id = alarm;
   }
-  const displayText = draftRequestLabel(draftKind, payload);
+  const displayText = draftRequestLabel(kind, payload);
+  const command = { report: "report", scheduled_report: "schedule", ticket: "ticket" }[kind];
   const button = $("prepare-draft");
   const replaced = replacingCard;
   clearError();
   button.disabled = true;
   button.textContent = "Preparing…";
   try {
-    const completed = await send(`/${draftKind} ${JSON.stringify(payload)}`, displayText);
+    const completed = await send(`/${command} ${JSON.stringify(payload)}`, displayText);
     if (completed) {
       $("draft-panel").hidden = true;
       form.reset();
@@ -1359,8 +1720,18 @@ function applyDraftChanges(changes) {
 }
 
 /* Each step uses the same functions as the buttons a presenter would click. */
+function chooseOption(label) {
+  const wanted = String(label).trim().toLowerCase();
+  const group = [...document.querySelectorAll("#messages .reply-choices")].pop();
+  const button = [...(group?.querySelectorAll("button") || [])]
+    .find((item) => replyChoices.get(item)?.label.trim().toLowerCase() === wanted);
+  if (!button || button.disabled) throw new Error("That choice isn’t on offer. Reset the scenario to start again.");
+  return chooseReply(replyChoices.get(button), button);
+}
+
 async function runScenarioStep(step) {
   if (step.say) return send(step.say, step.display || step.say);
+  if (step.choose) return chooseOption(step.choose);
   if (step.answer) {
     if (!activeFlow) throw new Error("There’s no guided-check question waiting. Reset the scenario to start again.");
     return answerFlow(activeFlow, step.answer, step.label || step.answer);

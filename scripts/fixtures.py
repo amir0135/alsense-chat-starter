@@ -9,6 +9,7 @@ synthetic data:
 tests/test_contracts.py fails when the committed files drift from what this script produces.
 """
 
+import dataclasses
 import json
 import sys
 from collections.abc import Callable
@@ -27,13 +28,14 @@ from alsense_chat.adapters.contracts import (
     ReportJob,
     ReportRequest,
     ReportType,
+    ScheduledReportRequest,
     Site,
     Submission,
     SupportRequest,
     User,
 )
 from alsense_chat.adapters.errors import Forbidden, IntegrationError
-from alsense_chat.adapters.synthetic.services import SyntheticHealth
+from alsense_chat.adapters.synthetic.services import SyntheticHealth, SyntheticReports
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "fixtures"
@@ -48,6 +50,7 @@ CONTRACTS = [
     ReportType,
     HealthReport,
     ReportRequest,
+    ScheduledReportRequest,
     SupportRequest,
     Submission,
     ReportJob,
@@ -69,7 +72,7 @@ def _denied() -> None:
 
 def cases() -> dict[str, tuple[Any, Callable[[], Any]]]:
     """Fixture path -> (contract type, producer)."""
-    services = synthetic.build()
+    services = dataclasses.replace(synthetic.build(), reports=SyntheticReports(clock=lambda: OBSERVED))
     health = SyntheticHealth(clock=lambda: OBSERVED + timedelta(minutes=2))
     alice, bob, carol = (services.identity.users_me(name) for name in ("alice", "bob", "carol"))
 
@@ -79,6 +82,15 @@ def cases() -> dict[str, tuple[Any, Callable[[], Any]]]:
     report = ReportRequest(
         site_id="site-a", report_type="alarm-history", format="pdf", start=date(2026, 1, 1), end=date(2026, 1, 31)
     )
+    schedule = ScheduledReportRequest(
+        site_id="site-a",
+        report_type="temperature-log",
+        format="xlsx",
+        frequency="weekly",
+        recipients=["operations@example.com", "quality@example.com"],
+        start_date=date(2026, 2, 2),
+        end_date=date(2026, 6, 29),
+    )
     ticket = SupportRequest(
         site_id="site-b",
         summary="Site seems disconnected",
@@ -86,9 +98,12 @@ def cases() -> dict[str, tuple[Any, Callable[[], Any]]]:
     )
     return {
         "identity/users-me.json": (User, lambda: alice),
-        "sites/search-success.json": (list[Site], lambda: services.sites.search_sites(alice, "*")),
-        "sites/search-ambiguous.json": (list[Site], lambda: services.sites.search_sites(carol, "demo east")),
-        "sites/search-empty.json": (list[Site], lambda: services.sites.search_sites(alice, "south")),
+        "sites/permitted.json": (list[Site], lambda: services.sites.permitted_sites(alice)),
+        "sites/permitted-similar-names.json": (list[Site], lambda: services.sites.permitted_sites(carol)),
+        "sites/unavailable.json": (
+            ErrorResponse,
+            lambda: _error(lambda: faulty("sites_unavailable").sites.permitted_sites(alice)),
+        ),
         "sites/alarms-active.json": (list[Alarm], lambda: services.sites.active_alarms(alice, "site-a")),
         "sites/forbidden.json": (ErrorResponse, lambda: _error(_denied)),
         "health/unreachable.json": (HealthReport, lambda: health.site_health(alice, "site-a")),
@@ -109,6 +124,8 @@ def cases() -> dict[str, tuple[Any, Callable[[], Any]]]:
         "reports/processing.json": (ReportJob, lambda: faulty("report_processing").reports.report_status(alice, KEY)),
         "reports/completed.json": (ReportJob, lambda: services.reports.report_status(alice, KEY)),
         "reports/failed.json": (ReportJob, lambda: faulty("report_failed").reports.report_status(alice, KEY)),
+        "reports/schedule-request.json": (ScheduledReportRequest, lambda: schedule),
+        "reports/scheduled.json": (Submission, lambda: services.reports.schedule_report(alice, schedule, KEY)),
         "support/request.json": (SupportRequest, lambda: ticket),
         "support/received.json": (Submission, lambda: services.support.submit_request(bob, ticket, KEY)),
         "support/unavailable.json": (
