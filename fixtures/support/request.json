@@ -1,0 +1,6 @@
+{
+  "site_id": "site-b",
+  "alarm_id": null,
+  "summary": "Site seems disconnected",
+  "steps_tried": "Guided check: Site seems disconnected\n1. Recent readings visible: No\n2. Site: Demo South"
+}

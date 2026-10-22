@@ -1,0 +1,7 @@
+{
+  "id": "example-idempotency-key",
+  "kind": "ticket",
+  "status": "received",
+  "url": "/reference/ticket/example-idempotency-key",
+  "synthetic": true
+}

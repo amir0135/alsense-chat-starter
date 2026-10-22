@@ -11,15 +11,21 @@ flowchart LR
     G <--> F[Foundry Responses model<br/>optional]
     F -->|function request only| B
     B --> T[Curated backend tools]
-    T --> P[AlsenseSource adapter]
-    P --> M[Synthetic API<br/>implemented]
-    P -. delegated token / OBO .-> A[Real Alsense APIs or MCP<br/>future]
+    T --> P[Integration adapters<br/>one interface per service]
+    P --> M[Synthetic services + fault switches<br/>default]
+    P -. delegated token / OBO .-> A[adapters/alsense<br/>Real Alsense APIs or MCP, future]
     T -. service identity .-> K[Azure AI Search<br/>future]
     W -->|explicit Submit| C[Confirmation endpoint]
     C --> P
-    B --> D[(SQLite<br/>local persistence)]
-    B -. future .-> O[App Insights + evaluations]
+    B -->|/flow, trigger words| R[Guided checks<br/>operations decision trees]
+    R -->|backend-only lookups| P
+    B --> D[(SQLite<br/>sessions, drafts, audit)]
+    W --> Y["/system readiness page"]
+    B -. optional .-> O[App Insights]
 ```
+
+For a detailed, editable version with animated request flows, open [`architecture.drawio`](architecture.drawio)
+in draw.io.
 
 ## Local implementation
 
@@ -28,6 +34,14 @@ The widget receives an opaque demo token; the backend resolves its hash to an ex
 never the raw token. All authenticated endpoints enforce the backend feature flag and internal-user gate.
 The widget can request permitted report types and start a fresh conversation under the same authenticated
 synthetic identity; both endpoints require the existing bearer session.
+
+Every external capability sits behind an interface in `src/alsense_chat/adapters/interfaces.py`: identity, site
+directory, guidance search, health checks, reports and support. `DATA_SOURCE` selects the implementation in one
+place (`build_services`). The synthetic services are the default; `adapters/alsense` holds placeholders that raise
+`NotConfiguredError`, so selecting them fails at startup instead of silently falling back. Adapters raise
+categorized errors (forbidden, not found, unavailable, timeout, stale, unauthenticated) whose user-safe wording the
+UI shows as is. For demos, synthetic fault switches wrap the synthetic services, process-wide
+(`SYNTHETIC_FAULTS`) or per scenario session; they never wrap a real integration.
 
 Tool arguments are validated against typed schemas. Sites are filtered by both tenant and allowed-site list.
 Support drafts also validate the alarm/site pair. Prepared actions belong to the session that created them.
@@ -38,7 +52,19 @@ The default runner is deterministic. Optional Foundry mode uses the Responses AP
 (`store=false`) and a bounded local history. The backend retains the conversation, runs function calls, and
 validates the final structured reply. It makes one repair attempt and then abstains.
 
-SQLite supports one local instance and survives process restarts. It is not a shared cloud session store. A real
+Guided troubleshooting flows are a separate deterministic path in both modes. The backend walks an
+operations-owned decision tree, identifies the site within the user's permitted sites, and runs its lookups
+(for example open health checks) with the session's permissions. These lookups are not exposed as model tools.
+
+Every request gets a correlation id (reused from a well-formed `X-Correlation-ID` header and returned in the
+response). Chat, guided-check, sign-in and confirmation events are written to an audit table with the demo user,
+scenario, flow id and version, tools called with their result category, allowlisted inputs (free text only as its
+length), confirmation state, outcome and error category, never tokens or message text. Each reply carries a
+user-safe "Why this result?" explanation built from the same facts. `/api/system` and the `/system` page report,
+without secrets, which capabilities are synthetic, configured, disabled or future integrations.
+
+SQLite supports one local instance and survives process restarts. The schema is versioned with
+`PRAGMA user_version` and migrated in place at startup. It is not a shared cloud session store. A real
 distributed deployment needs a store with tenant/user ownership, expiry, concurrency control, and idempotent
 submission supported by the downstream API.
 

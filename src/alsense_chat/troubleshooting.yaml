@@ -1,0 +1,65 @@
+# Synthetic guided troubleshooting flows for the reference starter.
+# Operations teams own real flows. Load customer-provided flows from a local file with FLOWS_FILE and keep
+# them out of this repository, its exports and container images.
+#
+# Every flow declares:
+#   title, version ("1.0.0"), status (draft | review | approved | retired), owner, approved_for_demo,
+#   start (first node) and nodes. Optional: description and triggers (word lists that start the flow).
+#   Only flows with approved_for_demo: true (and not retired) are offered.
+#
+# Node types (exactly one per node):
+#   ask:           yes/no question for the user              -> yes / no
+#   identify_site: match the user's description to a permitted site, with "Do you mean ...?"
+#                  suggestions, a choice when several sites match, and a limited number of attempts
+#                                                             -> found / not_found
+#   check:         backend lookup with the user's permissions -> yes / no (optional: unavailable)
+#                  Without an unavailable branch, a failed lookup ends the flow with an explicit message.
+#   outcome:       final guidance; kind is resolve (user action) or ticket (prepare a support request),
+#                  category names the ending for audits and evaluations.
+#
+# Validate changes with: uv run python scripts/dev.py validate-flows
+flows:
+  site-connection:
+    title: Site seems disconnected
+    version: "1.0.0"
+    status: approved
+    owner: Synthetic operations team
+    approved_for_demo: true
+    description: Check whether a site can reach the platform before asking support.
+    triggers:
+      - [site, disconnected]
+      - [site, unreachable]
+    start: recent-readings
+    nodes:
+      recent-readings:
+        ask: Do you see readings from the site in the last hour?
+        short: Recent readings visible
+        yes: data-arriving
+        no: identify
+      data-arriving:
+        outcome: The site is still sending data, so its connection looks fine. If something else looks wrong, prepare a support request.
+        kind: ticket
+        category: connection_ok
+      identify:
+        identify_site: Which site is this about?
+        attempts: 3
+        found: gateway
+        not_found: unknown-site
+      unknown-site:
+        outcome: Sorry, I couldn't identify the site. Please prepare a support request.
+        kind: ticket
+        category: site_not_identified
+      gateway:
+        check: site_health
+        any_open: [primary-gateway-offline, secondary-gateway-offline]
+        short: Open gateway offline health check
+        yes: unreachable
+        no: investigate
+      unreachable:
+        outcome: The site's gateway is offline, so the site can't reach the platform. Check the site's network connection.
+        kind: resolve
+        category: connectivity_guidance
+      investigate:
+        outcome: The gateway looks online, so this needs a closer look. Please prepare a support request.
+        kind: ticket
+        category: needs_investigation

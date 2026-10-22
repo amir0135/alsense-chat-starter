@@ -5,35 +5,23 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from counting import CountingServices
 from fastapi.testclient import TestClient
 
+from alsense_chat.adapters import synthetic
+from alsense_chat.adapters.synthetic.services import SyntheticIdentity
 from alsense_chat.app import create_app
 from alsense_chat.config import Settings
 from alsense_chat.runner import FoundryRunner, guard
-from alsense_chat.source import MockAlsenseSource
 from alsense_chat.store import Store
 from alsense_chat.tools import Context, model_definition, safe_link, tool_definitions
 
 
-class CountingSource(MockAlsenseSource):
-    def __init__(self):
-        self.lookups = 0
-        self.submissions = 0
-
-    def users_me(self, identity):
-        self.lookups += 1
-        return super().users_me(identity)
-
-    def submit(self, *args):
-        self.submissions += 1
-        return super().submit(*args)
-
-
 @pytest.fixture
 def setup(tmp_path):
-    source = CountingSource()
+    source = CountingServices()
     settings = Settings(db=str(tmp_path / "sessions.sqlite3"))
-    with TestClient(create_app(settings, source)) as client:
+    with TestClient(create_app(settings, source.services)) as client:
         yield client, source, settings
 
 
@@ -55,8 +43,13 @@ def chat(client, headers, message):
 
 
 def report(site="site-a"):
-    return {"site_id": site, "report_type": "alarm-history", "format": "pdf",
-            "start": "2026-01-01", "end": "2026-01-31"}
+    return {
+        "site_id": site,
+        "report_type": "alarm-history",
+        "format": "pdf",
+        "start": "2026-01-01",
+        "end": "2026-01-31",
+    }
 
 
 def test_all_tools_are_declared_and_curated():
@@ -91,7 +84,8 @@ def test_report_types_require_a_session(setup):
     assert client.get("/api/report-types").status_code == 401
     headers = login(client)
     assert [item["id"] for item in client.get("/api/report-types", headers=headers).json()] == [
-        "alarm-history", "site-status",
+        "alarm-history",
+        "site-status",
     ]
 
 
@@ -133,7 +127,8 @@ def test_site_and_tenant_isolation(setup):
     assert "site-b" not in json.dumps(own)
     assert chat(client, alice, "/sites site-b")["status"] == "not_in_data"
     denied = chat(client, alice, "/report " + json.dumps(report("site-b")))
-    assert denied["status"] == "clarification"
+    assert (denied["status"], denied["error"]["category"]) == ("error", "forbidden")
+    assert denied["text"] == "That site isn't one of your permitted sites."
     assert denied["actions"] == []
     assert chat(client, bob, "/sites *")["sources"][0]["data"][0]["id"] == "site-b"
 
@@ -154,33 +149,44 @@ def test_explicit_confirmation_and_idempotent_submission(setup):
     assert first.json()["synthetic"] is True
     assert source.submissions == 1
     status = chat(client, headers, f"/status {action_id}")
-    assert status["sources"][0]["data"]["state"] == "submitted"
+    assert status["sources"][0]["data"]["state"] == "completed"
+    assert status["text"] == "Your synthetic report is ready."
 
 
 def test_ticket_alarm_authorization_and_prepare_only(setup):
     client, source, _ = setup
     headers = login(client)
-    payload = {"site_id": "site-a", "alarm_id": "alarm-site-b", "summary": "Offline",
-               "steps_tried": "Checked connectivity"}
+    payload = {
+        "site_id": "site-a",
+        "alarm_id": "alarm-site-b",
+        "summary": "Offline",
+        "steps_tried": "Checked connectivity",
+    }
     assert chat(client, headers, "/ticket " + json.dumps(payload))["actions"] == []
     payload["alarm_id"] = "alarm-site-a"
     draft = chat(client, headers, "/ticket " + json.dumps(payload))
     assert draft["actions"][0]["kind"] == "ticket"
     assert source.submissions == 0
     action_id = draft["actions"][0]["id"]
-    assert client.post(f"/api/actions/{action_id}/submit", headers=headers,
-                       json={"confirmed": True}).json()["status"] == "mock_received"
+    assert (
+        client.post(f"/api/actions/{action_id}/submit", headers=headers, json={"confirmed": True}).json()["status"]
+        == "received"
+    )
 
 
 def test_sessions_and_drafts_survive_restart(setup):
     client, source, settings = setup
     headers = login(client)
     draft = chat(client, headers, "/report " + json.dumps(report()))
-    with TestClient(create_app(settings, source)) as restarted:
+    with TestClient(create_app(settings, source.services)) as restarted:
         history = restarted.get("/api/session", headers=headers).json()["history"]
         assert history[-1]["reply"]["actions"][0]["id"] == draft["actions"][0]["id"]
-        assert restarted.post(f"/api/actions/{draft['actions'][0]['id']}/submit", headers=headers,
-                              json={"confirmed": True}).status_code == 200
+        assert (
+            restarted.post(
+                f"/api/actions/{draft['actions'][0]['id']}/submit", headers=headers, json={"confirmed": True}
+            ).status_code
+            == 200
+        )
 
 
 def test_expired_session(setup):
@@ -191,10 +197,17 @@ def test_expired_session(setup):
     assert client.get("/api/session", headers=headers).status_code == 401
 
 
-@pytest.mark.parametrize("changes", [
-    {"format": "exe"}, {"start": "yesterday"}, {"end": "2025-01-01"},
-    {"end": "2028-01-01"}, {"report_type": "other"}, {"url": "https://evil.example"},
-])
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"format": "exe"},
+        {"start": "yesterday"},
+        {"end": "2025-01-01"},
+        {"end": "2028-01-01"},
+        {"report_type": "other"},
+        {"url": "https://evil.example"},
+    ],
+)
 def test_bad_report_inputs_never_prepare(setup, changes):
     client, _, _ = setup
     assert chat(client, login(client), "/report " + json.dumps({**report(), **changes}))["actions"] == []
@@ -220,9 +233,9 @@ def test_unapproved_links(url):
 
 def test_reply_guard_blocks_inventions(tmp_path):
     store = Store(str(tmp_path / "db.sqlite3"))
-    user = MockAlsenseSource().users_me("alice")
+    user = SyntheticIdentity().users_me("alice")
     _, session_id = store.create_session(user, 3600)
-    ctx = Context(MockAlsenseSource(), store, session_id, user)
+    ctx = Context(synthetic.build(), store, session_id, user)
     ctx.execute("resolve_sites", {"query": "*"})
     for reply in (
         {"status": "answer", "text": "There are 987 alarms.", "source_ids": ["tool-1"]},
@@ -238,9 +251,9 @@ def test_reply_guard_blocks_inventions(tmp_path):
 
 def test_reply_guard_keeps_internal_identifiers_out_of_text(tmp_path):
     store = Store(str(tmp_path / "db.sqlite3"))
-    user = MockAlsenseSource().users_me("alice")
+    user = SyntheticIdentity().users_me("alice")
     _, session_id = store.create_session(user, 3600)
-    ctx = Context(MockAlsenseSource(), store, session_id, user)
+    ctx = Context(synthetic.build(), store, session_id, user)
     sites = ctx.execute("resolve_sites", {"query": "*"})
     docs = ctx.execute("search_docs", {"query": "sensor offline"})
     assert "tenant_id" not in json.dumps(sites)
@@ -271,8 +284,8 @@ def test_demo_answers_are_concise_and_use_display_names(setup):
 
 def test_foundry_backend_executes_tools_and_never_receives_credentials(tmp_path):
     store = Store(str(tmp_path / "db.sqlite3"))
-    source = MockAlsenseSource()
-    user = source.users_me("alice")
+    source = synthetic.build()
+    user = source.identity.users_me("alice")
     token, session_id = store.create_session(user, 3600)
     ctx = Context(source, store, session_id, user)
     requests = []
@@ -290,9 +303,17 @@ def test_foundry_backend_executes_tools_and_never_receives_credentials(tmp_path)
         requests.append(json.loads(json.dumps(kwargs)))
         if len(requests) == 1:
             return SimpleNamespace(status="completed", output=[Call()])
-        return SimpleNamespace(status="completed", output=[], output_text=json.dumps({
-            "status": "answer", "text": "Your permitted site is Demo North.", "source_ids": ["tool-1"],
-        }))
+        return SimpleNamespace(
+            status="completed",
+            output=[],
+            output_text=json.dumps(
+                {
+                    "status": "answer",
+                    "text": "Your permitted site is Demo North.",
+                    "source_ids": ["tool-1"],
+                }
+            ),
+        )
 
     runner = FoundryRunner.__new__(FoundryRunner)
     runner.deployment = "test"
@@ -313,9 +334,9 @@ def test_cloud_demo_requires_strong_code_and_validates_before_identity_lookup(tm
     with pytest.raises(ValueError, match="high-entropy"):
         Settings(cloud_demo=True).validate()
     code = "synthetic-code-with-at-least-32-characters"
-    source = CountingSource()
+    source = CountingServices()
     settings = Settings(cloud_demo=True, demo_access_code=code, db=str(tmp_path / "cloud.sqlite3"))
-    with TestClient(create_app(settings, source)) as client:
+    with TestClient(create_app(settings, source.services)) as client:
         for supplied in ("", "incorrect", "非ASCII"):
             response = client.post("/api/demo/session", json={"persona": "alice", "access_code": supplied})
             assert response.status_code == 401
@@ -331,8 +352,11 @@ def test_cloud_demo_requires_strong_code_and_validates_before_identity_lookup(tm
 
 def test_unknown_site_does_not_leak_other_tenant_in_support(setup):
     client, source, _ = setup
-    reply = chat(client, login(client), '/ticket {"site_id":"site-b","alarm_id":"alarm-site-b",'
-                 '"summary":"Offline","steps_tried":"Checked power"}')
+    reply = chat(
+        client,
+        login(client),
+        '/ticket {"site_id":"site-b","alarm_id":"alarm-site-b","summary":"Offline","steps_tried":"Checked power"}',
+    )
     assert reply["actions"] == []
     assert "Demo South" not in json.dumps(reply)
     assert source.submissions == 0
@@ -380,7 +404,20 @@ def test_export_excludes_credentials_databases_and_parent_repo(tmp_path):
         assert "alsense-chat-starter/PRODUCT.md" in names
         assert "alsense-chat-starter/DESIGN.md" in names
         assert "alsense-chat-starter/.env.example" in names
-        assert "alsense-chat-starter/.github/workflows/tests.yml" in names
+        assert "alsense-chat-starter/.github/workflows/ci.yml" in names
+        for required in (
+            "uv.lock",
+            ".python-version",
+            "compose.yaml",
+            "scripts/doctor.py",
+            "scripts/dev.py",
+            ".devcontainer/devcontainer.json",
+            "fixtures/reports/failed.json",
+            "evals/synthetic/troubleshooting.yaml",
+            "src/alsense_chat/adapters/alsense/__init__.py",
+        ):
+            assert f"alsense-chat-starter/{required}" in names, required
+        assert not any(".local." in name or name.endswith("/.env") for name in names)
         assert all("demo-data" not in name and "/.git/" not in name and not name.endswith(".sqlite3") for name in names)
         assert "alsense-chat-starter/.env" not in names
     with pytest.raises(FileExistsError):

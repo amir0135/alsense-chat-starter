@@ -1,0 +1,18 @@
+[
+  {
+    "id": "alarm-history",
+    "label": "Alarm history",
+    "formats": [
+      "pdf",
+      "csv"
+    ]
+  },
+  {
+    "id": "site-status",
+    "label": "Site status",
+    "formats": [
+      "pdf",
+      "csv"
+    ]
+  }
+]

@@ -1,0 +1,7 @@
+{
+  "id": "example-idempotency-key",
+  "state": "processing",
+  "url": null,
+  "message": null,
+  "synthetic": true
+}

@@ -1,0 +1,36 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "site_id": {
+      "title": "Site Id",
+      "type": "string"
+    },
+    "alarm_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Alarm Id"
+    },
+    "summary": {
+      "title": "Summary",
+      "type": "string"
+    },
+    "steps_tried": {
+      "title": "Steps Tried",
+      "type": "string"
+    }
+  },
+  "required": [
+    "site_id",
+    "summary",
+    "steps_tried"
+  ],
+  "title": "SupportRequest",
+  "type": "object"
+}

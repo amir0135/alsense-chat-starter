@@ -16,6 +16,11 @@
   FORM: Responsive operator workspace borrowing the POC's clarity without importing its identity or data.
   -->
   <div class="app-shell">
+    <div class="demo-banner" role="note">
+      <span class="banner-dot" aria-hidden="true"></span>
+      <span id="demo-notice">Local reference demo. Uses synthetic data and does not connect to Alsense.</span>
+      <a class="banner-link" href="/system">System status</a>
+    </div>
     <aside class="sidebar" aria-label="Assistant workspace">
       <div class="brand-lockup">
         <span class="brand-mark" aria-hidden="true">A</span>
@@ -32,17 +37,21 @@
           <span class="action-symbol" aria-hidden="true">⌖</span>
           <span>My permitted sites</span>
         </button>
-        <button class="rail-action" type="button" data-message="My sensor is offline. What should I check?" disabled>
+        <button class="rail-action" type="button" data-message="/flows" data-display="Troubleshoot an issue" data-feature="troubleshooting" disabled>
           <span class="action-symbol" aria-hidden="true">⌁</span>
           <span>Troubleshoot an issue</span>
         </button>
-        <button class="rail-action" type="button" id="open-report" disabled>
+        <button class="rail-action" type="button" id="open-report" data-feature="reports" disabled>
           <span class="action-symbol" aria-hidden="true">▤</span>
           <span>Prepare a report</span>
         </button>
-        <button class="rail-action" type="button" id="open-ticket" disabled>
+        <button class="rail-action" type="button" id="open-ticket" data-feature="support" disabled>
           <span class="action-symbol" aria-hidden="true">↗</span>
           <span>Contact support</span>
+        </button>
+        <button class="rail-action" type="button" id="open-scenarios">
+          <span class="action-symbol" aria-hidden="true">▶</span>
+          <span>Demo scenarios</span>
         </button>
       </section>
 
@@ -55,6 +64,7 @@
         <select id="persona">
           <option value="alice">Alice · Demo North</option>
           <option value="bob">Bob · Demo South</option>
+          <option value="carol">Carol · Demo East Hall, Demo East Depot</option>
         </select>
         <div id="access-code-field">
           <label for="access-code">Demo access code</label>
@@ -71,7 +81,7 @@
         <p id="identity" class="identity-summary" hidden></p>
       </section>
 
-      <p class="synthetic-note"><span aria-hidden="true">●</span> Synthetic data only · No live Alsense calls</p>
+      <p class="synthetic-note"><span aria-hidden="true">●</span><span>Synthetic data only · No live Alsense calls · <a href="/system">System status</a></span></p>
     </aside>
 
     <main class="main-panel">
@@ -97,54 +107,118 @@
               <span><strong>Find my sites</strong><small>See which sites this session can access</small></span>
               <span class="suggestion-arrow" aria-hidden="true">↗</span>
             </button>
-            <button type="button" class="suggestion" data-message="My sensor is offline. What should I check?" disabled>
+            <button type="button" class="suggestion" data-message="/flows" data-display="Troubleshoot an issue" data-feature="troubleshooting" disabled>
               <span class="suggestion-icon" aria-hidden="true">⌁</span>
-              <span><strong>Troubleshoot an issue</strong><small>Get guidance for an offline sensor</small></span>
+              <span><strong>Troubleshoot an issue</strong><small>Step-by-step checks for common issues</small></span>
               <span class="suggestion-arrow" aria-hidden="true">↗</span>
             </button>
-            <button type="button" class="suggestion" data-message="/reports" disabled>
+            <button type="button" class="suggestion" data-message="/reports" data-display="Explore reports" data-feature="reports" disabled>
               <span class="suggestion-icon" aria-hidden="true">▤</span>
               <span><strong>Explore reports</strong><small>Check the available report types</small></span>
               <span class="suggestion-arrow" aria-hidden="true">↗</span>
             </button>
-            <button type="button" class="suggestion" id="suggest-report" disabled>
+            <button type="button" class="suggestion" id="suggest-report" data-feature="reports" disabled>
               <span class="suggestion-icon" aria-hidden="true">＋</span>
               <span><strong>Prepare a report</strong><small>Review the details before submitting</small></span>
               <span class="suggestion-arrow" aria-hidden="true">↗</span>
             </button>
           </div>
           <p id="welcome-hint" class="welcome-hint">Start a synthetic session in the left panel to begin.</p>
+          <p class="welcome-hint">Presenting? <button id="welcome-scenarios" class="link-button" type="button">Run a demo scenario</button> with the right user and expected result.</p>
         </div>
+        <section id="scenario-gallery" class="scenario-gallery" aria-labelledby="scenario-gallery-title" hidden>
+          <div class="gallery-heading">
+            <div>
+              <h1 id="scenario-gallery-title" tabindex="-1">Demo scenarios</h1>
+              <p>Repeatable walkthroughs. Each one starts a fresh synthetic session as the right user, and resetting starts it again from a clean conversation.</p>
+            </div>
+            <button id="close-scenarios" class="icon-button" type="button" aria-label="Close demo scenarios">×</button>
+          </div>
+          <p id="scenario-error" class="session-error" role="alert" hidden></p>
+          <div id="scenario-groups"></div>
+        </section>
         <div id="messages" class="message-list" role="log" aria-live="polite" aria-label="Chat messages"></div>
       </section>
 
       <div class="compose-area">
-        <section id="draft-panel" class="draft-panel" aria-labelledby="draft-title" hidden>
+        <section id="draft-panel" class="draft-panel" aria-labelledby="draft-title" data-kind="report" hidden>
           <div class="draft-heading">
             <div><h2 id="draft-title">Prepare a report</h2><p id="draft-description">Review the details before anything is submitted.</p></div>
             <button id="cancel-draft" class="icon-button" type="button" aria-label="Close form">×</button>
           </div>
-          <form id="draft-form">
-            <label>Site<select name="site_id" required></select></label>
-            <div id="report-fields" class="draft-grid">
-              <label>Report type<select name="report_type" required></select></label>
-              <label>Format<select name="format" required><option value="pdf">PDF</option><option value="csv">CSV</option></select></label>
-              <label>From<input name="start" type="date" required></label>
-              <label>To<input name="end" type="date" required></label>
+          <form id="draft-form" novalidate>
+            <div class="builder-row">
+              <label class="row-label" for="draft-site">Site</label>
+              <div class="row-control">
+                <select id="draft-site" name="site_id" required></select>
+                <p id="site-fixed" class="site-pill" hidden></p>
+              </div>
+            </div>
+            <div id="report-fields" class="report-builder">
+              <div class="builder-row">
+                <span id="report-type-label" class="row-label">Report</span>
+                <div id="report-type-options" class="choice-cards row-control" role="radiogroup" aria-labelledby="report-type-label"></div>
+              </div>
+              <div class="builder-row">
+                <span id="period-label" class="row-label">Period</span>
+                <div class="row-control">
+                  <div class="chip-row" role="radiogroup" aria-labelledby="period-label">
+                    <label class="chip"><input type="radio" name="period" value="last-7"><span>Last 7 days</span></label>
+                    <label class="chip"><input type="radio" name="period" value="last-30" checked><span>Last 30 days</span></label>
+                    <label class="chip"><input type="radio" name="period" value="this-month"><span>This month</span></label>
+                    <label class="chip"><input type="radio" name="period" value="last-month"><span>Last month</span></label>
+                    <label class="chip"><input type="radio" name="period" value="custom"><span>Custom</span></label>
+                  </div>
+                  <div id="custom-range" class="range-inputs" hidden>
+                    <label>From<input name="start" type="date" required aria-describedby="range-error"></label>
+                    <span aria-hidden="true">–</span>
+                    <label>To<input name="end" type="date" required aria-describedby="range-error"></label>
+                  </div>
+                  <p id="range-readout" class="range-readout"></p>
+                  <p id="range-error" class="field-error" role="alert" hidden></p>
+                </div>
+              </div>
+              <div class="builder-row">
+                <span id="format-label" class="row-label">Format</span>
+                <div class="row-control">
+                  <div class="segmented" role="radiogroup" aria-labelledby="format-label">
+                    <label class="segment"><input type="radio" name="format" value="pdf" checked><span>PDF</span></label>
+                    <label class="segment"><input type="radio" name="format" value="csv"><span>CSV</span></label>
+                  </div>
+                </div>
+              </div>
             </div>
             <div id="ticket-fields" class="draft-grid" hidden>
-              <label>Alarm ID<input name="alarm_id" maxlength="100" placeholder="For example, alarm-site-a" required></label>
+              <label>Alarm ID (optional)<input name="alarm_id" maxlength="100" placeholder="For example, alarm-site-a"></label>
               <p class="field-help grid-span">Synthetic example: alarm-site-a for Demo North or alarm-site-b for Demo South.</p>
               <label class="grid-span">What happened?<textarea name="summary" maxlength="500" required></textarea></label>
               <label class="grid-span">What have you tried?<textarea name="steps_tried" maxlength="2000" required></textarea></label>
             </div>
             <div class="draft-actions">
-              <p>Preparing is not submitting. You’ll review a separate confirmation.</p>
-              <button class="start-session" type="submit">Prepare for review</button>
+              <div class="draft-summary">
+                <span id="draft-summary-icon" class="summary-icon" aria-hidden="true">▤</span>
+                <div><strong id="draft-summary-text"></strong><p>Preparing is not submitting. You’ll review a separate confirmation.</p></div>
+              </div>
+              <button id="prepare-draft" class="start-session" type="submit">Prepare for review</button>
             </div>
           </form>
         </section>
 
+        <section id="scenario-coach" class="scenario-coach" aria-labelledby="coach-title" hidden>
+          <div class="coach-copy">
+            <h2 id="coach-title"></h2>
+            <p class="coach-note" aria-live="polite"><strong id="coach-progress"></strong> <span id="coach-note"></span></p>
+          </div>
+          <div class="coach-actions">
+            <button id="coach-run" class="start-session" type="button">Run step</button>
+            <button id="coach-reset" class="secondary-action" type="button">Reset scenario</button>
+            <button id="coach-exit" class="flow-cancel" type="button">End</button>
+          </div>
+        </section>
+        <div id="flow-hint" class="flow-hint" hidden>
+          <span>Type the company and site name below, or pick a site above.</span>
+          <button id="flow-cancel" class="flow-cancel" type="button">Stop check</button>
+        </div>
         <form id="composer" class="composer">
           <label class="visually-hidden" for="message">Your message</label>
           <textarea id="message" rows="1" required maxlength="6000" placeholder="Ask about your sites, an alarm, or a report…" disabled></textarea>

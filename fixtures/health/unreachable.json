@@ -1,0 +1,12 @@
+{
+  "site_id": "site-a",
+  "observed_at": "2026-01-15T08:58:00Z",
+  "checks": [
+    {
+      "id": "hc-site-a-primary-gateway-offline",
+      "type": "primary-gateway-offline",
+      "check": "Primary Gateway Offline",
+      "status": "open"
+    }
+  ]
+}

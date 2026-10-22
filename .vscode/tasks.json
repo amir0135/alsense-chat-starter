@@ -1,0 +1,50 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Start demo",
+      "detail": "Run the synthetic demo on http://127.0.0.1:8001",
+      "type": "process",
+      "command": "python3",
+      "args": ["scripts/dev.py", "start"],
+      "windows": { "command": "python" },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "alsense-demo",
+        "pattern": { "regexp": "^(ERROR):\\s+(.*)$", "severity": 1, "message": 2 },
+        "background": {
+          "activeBegins": true,
+          "beginsPattern": "Starting the demo",
+          "endsPattern": "Application startup complete|already running"
+        }
+      },
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "Run tests",
+      "detail": "Tests, contract checks and evaluations",
+      "type": "process",
+      "command": "python3",
+      "args": ["scripts/dev.py", "test"],
+      "windows": { "command": "python" },
+      "problemMatcher": [],
+      "group": { "kind": "test", "isDefault": true }
+    },
+    {
+      "label": "Setup doctor",
+      "type": "process",
+      "command": "python3",
+      "args": ["scripts/dev.py", "doctor"],
+      "windows": { "command": "python" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Reset demo data",
+      "type": "process",
+      "command": "python3",
+      "args": ["scripts/dev.py", "reset"],
+      "windows": { "command": "python" },
+      "problemMatcher": []
+    }
+  ]
+}

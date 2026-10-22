@@ -1,0 +1,124 @@
+# Guided troubleshooting behaviour. Scripted mode asserts exact tool calls and outcome categories.
+cases:
+  - id: site-connection-unreachable
+    description: A misspelled site resolves to Demo North and the backend finds its gateway offline.
+    user: alice
+    steps:
+      - flow: site-connection
+        answers: ["no", "demo nrth", "yes"]
+    expected:
+      status: answer
+      resolved_site: Demo North
+      tool_calls: [resolve_sites, check_site_health]
+      outcome: connectivity_guidance
+      outcome_kind: resolve
+      must_not: [prepare_support_ticket, submit]
+
+  - id: site-connection-needs-support
+    description: No open gateway checks, so the tree ends in a prefilled support request.
+    user: bob
+    steps:
+      - flow: site-connection
+        answers: ["no", "Demo South"]
+    expected:
+      status: answer
+      resolved_site: Demo South
+      tool_calls: [resolve_sites, check_site_health]
+      outcome: needs_investigation
+      outcome_kind: ticket
+      must_not: [submit]
+
+  - id: data-still-arriving
+    description: Readings are arriving, so no lookup runs at all.
+    user: alice
+    steps:
+      - flow: site-connection
+        answers: ["yes"]
+    expected:
+      status: answer
+      tool_calls: []
+      outcome: connection_ok
+      outcome_kind: ticket
+
+  - id: site-not-identified
+    description: Three failed attempts end with a support request instead of a guess.
+    user: alice
+    steps:
+      - flow: site-connection
+        answers: ["no", "zzz", "qqq", "www"]
+    expected:
+      resolved_site: Not identified
+      tool_calls: [resolve_sites]
+      outcome: site_not_identified
+      outcome_kind: ticket
+
+  - id: ambiguous-site-asks-which
+    description: Two sites match equally well, so the assistant asks instead of guessing.
+    user: carol
+    steps:
+      - flow: site-connection
+        answers: ["no", "demo east"]
+    expected:
+      status: clarification
+      tool_calls: [resolve_sites]
+      options: [Demo East Hall, Demo East Depot]
+      text_includes: [I found more than one matching site.]
+
+  - id: health-service-down-stops-explicitly
+    description: A failed lookup stops the flow with the reason, never the "no" branch.
+    user: alice
+    faults: [health_unavailable]
+    steps:
+      - flow: site-connection
+        answers: ["no", "Demo North"]
+    expected:
+      status: error
+      error_category: unavailable
+      tool_calls: [resolve_sites, check_site_health]
+      outcome: lookup_unavailable
+      outcome_kind: ticket
+      must_not_mention: [The gateway looks online]
+
+  - id: stale-health-not-trusted
+    description: Hours-old health data is reported as out of date, not used.
+    user: alice
+    faults: [health_stale]
+    steps:
+      - flow: site-connection
+        answers: ["no", "Demo North"]
+    expected:
+      status: error
+      error_category: stale
+      outcome: lookup_stale
+
+  - id: free-text-starts-the-flow
+    description: Trigger words start the matching guided check in scripted mode.
+    user: alice
+    steps:
+      - say: Our site is unreachable since this morning
+    expected:
+      status: clarification
+      tool_calls: []
+      flow_step: question
+
+  - id: offline-sensor-guidance
+    description: Troubleshooting guidance comes only from approved documents.
+    user: alice
+    steps:
+      - say: My sensor is offline. What should I check?
+    expected:
+      status: answer
+      tool_calls: [search_docs]
+      evidence: [Synthetic alarm and report guide]
+      text_includes: [Demo North]
+      must_not: [prepare_support_ticket, prepare_report]
+
+  - id: no-approved-answer
+    description: Nothing approved matches, so the assistant says so instead of inventing advice.
+    user: bob
+    steps:
+      - say: /docs compressor calibration
+    expected:
+      status: not_in_data
+      tool_calls: [search_docs]
+      text_includes: [No approved guidance matches this issue.]

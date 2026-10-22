@@ -1,0 +1,5 @@
+{
+  "service": "health",
+  "category": "timeout",
+  "http_status": 504
+}

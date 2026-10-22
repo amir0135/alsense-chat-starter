@@ -1,11 +1,32 @@
+# Local configuration and secrets. .env.example is the committed template.
 .env
+.env.*
+!.env.example
+
+# Customer-provided material and local overrides stay on this machine.
+*.local.*
+compose.override.yaml
+compose.override.yml
+
+# Local demo data: sessions, drafts and the audit trail.
+data/
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+
+# Tooling and build output.
 .venv/
 __pycache__/
 .pytest_cache/
 .ruff_cache/
-*.sqlite3
-*.sqlite3-shm
-*.sqlite3-wal
+.mypy_cache/
 dist/
+
+# Azure deployment state, including the generated demo access code.
 .azure/
 infra/*.json
+
+# Personal editor settings; shared tasks are committed.
+.vscode/*
+!.vscode/tasks.json
+!.vscode/extensions.json

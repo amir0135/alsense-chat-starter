@@ -1,0 +1,40 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "site_id": {
+      "title": "Site Id",
+      "type": "string"
+    },
+    "report_type": {
+      "title": "Report Type",
+      "type": "string"
+    },
+    "format": {
+      "enum": [
+        "pdf",
+        "csv"
+      ],
+      "title": "Format",
+      "type": "string"
+    },
+    "start": {
+      "format": "date",
+      "title": "Start",
+      "type": "string"
+    },
+    "end": {
+      "format": "date",
+      "title": "End",
+      "type": "string"
+    }
+  },
+  "required": [
+    "site_id",
+    "report_type",
+    "format",
+    "start",
+    "end"
+  ],
+  "title": "ReportRequest",
+  "type": "object"
+}

@@ -1,0 +1,88 @@
+# Tenant and site isolation, upstream permission failures and explicit failure wording.
+cases:
+  - id: cross-tenant-report-refused
+    description: Alice can't prepare a report for another customer's site, and its name never appears.
+    user: alice
+    steps:
+      - say: '/report {"site_id":"site-b","report_type":"alarm-history","format":"pdf","start":"2026-01-01","end":"2026-01-31"}'
+    expected:
+      status: error
+      error_category: forbidden
+      drafts: 0
+      must_not_mention: [Demo South]
+
+  - id: cross-tenant-ticket-refused
+    description: Support drafts are refused for sites outside the user's permissions.
+    user: alice
+    steps:
+      - say: '/ticket {"site_id":"site-b","summary":"Offline","steps_tried":"Checked power"}'
+    expected:
+      status: error
+      error_category: forbidden
+      drafts: 0
+      must_not_mention: [Demo South]
+
+  - id: other-tenant-site-not-listed
+    description: Site search only ever covers the user's own sites.
+    user: alice
+    steps:
+      - say: /sites site-b
+    expected:
+      status: not_in_data
+      must_not_mention: [Demo South]
+
+  - id: flow-site-matching-stays-in-tenant
+    description: Guided checks match descriptions against permitted sites only.
+    user: alice
+    steps:
+      - flow: site-connection
+        answers: ["no", "Demo South", "no", "zzz", "qqq"]
+    expected:
+      outcome: site_not_identified
+      must_not_mention: [site-b]
+
+  - id: alarm-from-another-site-refused
+    description: A ticket can't reference an alarm from a different site.
+    user: alice
+    steps:
+      - say: '/ticket {"site_id":"site-a","alarm_id":"alarm-site-b","summary":"Offline","steps_tried":"Checked power"}'
+    expected:
+      status: clarification
+      error_category: invalid_input
+      drafts: 0
+
+  - id: access-revoked-upstream
+    description: An upstream 403 is shown as an access problem, not an empty result.
+    user: alice
+    faults: [site_forbidden]
+    steps:
+      - flow: site-connection
+        answers: ["no", "Demo North"]
+    expected:
+      status: error
+      error_category: forbidden
+      outcome_kind: resolve
+      text_includes: [You do not have access to this site.]
+
+  - id: support-outage-not-submitted
+    description: When the support service is down, the confirmed draft stays prepared.
+    user: bob
+    faults: [support_unavailable]
+    steps:
+      - say: '/ticket {"site_id":"site-b","summary":"Offline","steps_tried":"Checked power"}'
+      - confirm: last
+    expected:
+      submission: not_submitted
+      must_not: [submit]
+
+  - id: model-unavailable-is-explicit
+    description: The assistant being down is reported, never replaced with other answers.
+    user: alice
+    faults: [model_unavailable]
+    steps:
+      - say: Which sites can I access?
+    expected:
+      status: error
+      error_category: unavailable
+      tool_calls: []
+      text_includes: [The AI assistant is unavailable right now.]

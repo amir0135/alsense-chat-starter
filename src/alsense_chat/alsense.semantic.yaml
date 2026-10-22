@@ -87,8 +87,9 @@ tools:
       additionalProperties: false
   prepare_support_ticket:
     description: |
-      Prepare a support form for user review, without contacting support. Use the site id and alarm id
-      from resolve_sites; write summary and steps_tried in plain language from the conversation.
+      Prepare a support form for user review, without contacting support. Use the site id from
+      resolve_sites. Add the alarm id from resolve_sites only when the issue concerns that alarm.
+      Write summary and steps_tried in plain language from the conversation.
     parameters:
       type: object
       properties:
@@ -96,5 +97,5 @@ tools:
         alarm_id: {type: string}
         summary: {type: string}
         steps_tried: {type: string}
-      required: [site_id, alarm_id, summary, steps_tried]
+      required: [site_id, summary, steps_tried]
       additionalProperties: false

@@ -80,26 +80,45 @@ def main() -> None:
         if not args.what_if:
             write_private(code_file, code)
     parameters = {
-        "environmentName": args.name, "location": args.location, "aiLocation": args.ai_location,
-        "modelName": args.model, "modelVersion": args.model_version, "modelDeployment": args.model,
-        "modelCapacity": args.model_capacity, "demoAccessCode": code, "imageTag": "",
+        "environmentName": args.name,
+        "location": args.location,
+        "aiLocation": args.ai_location,
+        "modelName": args.model,
+        "modelVersion": args.model_version,
+        "modelDeployment": args.model,
+        "modelCapacity": args.model_capacity,
+        "demoAccessCode": code,
+        "imageTag": "",
     }
     with tempfile.TemporaryDirectory(prefix="alsense-deploy-") as temporary:
         folder = Path(temporary)
         params_file = folder / "parameters.json"
 
         def save_params():
-            params_file.write_text(json.dumps({
-                "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
-                "contentVersion": "1.0.0.0",
-                "parameters": {name: {"value": value} for name, value in parameters.items()},
-            }))
+            params_file.write_text(
+                json.dumps(
+                    {
+                        "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+                        "contentVersion": "1.0.0.0",
+                        "parameters": {name: {"value": value} for name, value in parameters.items()},
+                    }
+                )
+            )
             params_file.chmod(0o600)
 
         save_params()
-        common = ["--subscription", subscription, "--location", args.location,
-                  "--name", f"{args.name}-deployment", "--template-file", str(ROOT / "infra" / "main.bicep"),
-                  "--parameters", f"@{params_file}"]
+        common = [
+            "--subscription",
+            subscription,
+            "--location",
+            args.location,
+            "--name",
+            f"{args.name}-deployment",
+            "--template-file",
+            str(ROOT / "infra" / "main.bicep"),
+            "--parameters",
+            f"@{params_file}",
+        ]
         if args.what_if:
             # Include the app in the preview. A dry run does not build an image or create resources.
             parameters["imageTag"] = "preview"
@@ -110,14 +129,28 @@ def main() -> None:
             print("Creates billable resources and scoped managed-identity role assignments.")
             if input("Type deploy to proceed: ").strip() != "deploy":
                 raise RuntimeError("Deployment cancelled.")
-        providers = ["Microsoft.App", "Microsoft.ContainerRegistry", "Microsoft.CognitiveServices",
-                     "Microsoft.KeyVault", "Microsoft.ManagedIdentity", "Microsoft.OperationalInsights",
-                     "Microsoft.Insights"]
+        providers = [
+            "Microsoft.App",
+            "Microsoft.ContainerRegistry",
+            "Microsoft.CognitiveServices",
+            "Microsoft.KeyVault",
+            "Microsoft.ManagedIdentity",
+            "Microsoft.OperationalInsights",
+            "Microsoft.Insights",
+        ]
         for namespace in providers:
             provider = az("provider", "show", "--subscription", subscription, "--namespace", namespace)
             if provider["registrationState"] != "Registered":
-                az("provider", "register", "--subscription", subscription, "--namespace", namespace, "--wait",
-                   capture=False)
+                az(
+                    "provider",
+                    "register",
+                    "--subscription",
+                    subscription,
+                    "--namespace",
+                    namespace,
+                    "--wait",
+                    capture=False,
+                )
         print("Provisioning registry, model, identity, secrets and monitoring...", flush=True)
         initial = az("deployment", "sub", "create", *common)
         outputs = initial["properties"]["outputs"]
@@ -125,8 +158,17 @@ def main() -> None:
         image_tag = args.image_tag or time.strftime("%Y%m%d%H%M%S", time.gmtime()) + "-" + secrets.token_hex(3)
         # Never build from the enclosing NDA repository or include local credentials/history.
         if args.image_tag:
-            az("acr", "repository", "show", "--subscription", subscription, "--name", registry,
-               "--image", f"alsense-chat:{image_tag}")
+            az(
+                "acr",
+                "repository",
+                "show",
+                "--subscription",
+                subscription,
+                "--name",
+                registry,
+                "--image",
+                f"alsense-chat:{image_tag}",
+            )
             print(f"Reusing verified image tag {image_tag}.", flush=True)
         else:
             archive = folder / "starter.zip"
@@ -135,8 +177,18 @@ def main() -> None:
                 zipped.extractall(folder / "build")
             context = folder / "build" / "alsense-chat-starter"
             print("Building the clean standalone image in Azure Container Registry...", flush=True)
-            az("acr", "build", "--subscription", subscription, "--registry", registry,
-               "--image", f"alsense-chat:{image_tag}", str(context), capture=False)
+            az(
+                "acr",
+                "build",
+                "--subscription",
+                subscription,
+                "--registry",
+                registry,
+                "--image",
+                f"alsense-chat:{image_tag}",
+                str(context),
+                capture=False,
+            )
         parameters["imageTag"] = image_tag
         save_params()
         print("Deploying the protected application...", flush=True)

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f3f4f6">
+  <title>System status · Alsense Operations Assistant</title>
+  <link rel="stylesheet" href="/widget.css">
+</head>
+<body class="system-body">
+  <div class="demo-banner" role="note">
+    <span class="banner-dot" aria-hidden="true"></span>
+    <span id="demo-notice">Local reference demo. Uses synthetic data and does not connect to Alsense.</span>
+    <a class="banner-link" href="/">Open the assistant</a>
+  </div>
+  <main class="system-main">
+    <header class="system-header">
+      <a class="back-link" href="/">← Back to the assistant</a>
+      <h1>System status</h1>
+      <p>Where each capability's data comes from in this environment. Nothing on this page is secret: no keys,
+        endpoints, tokens or access codes are shown.</p>
+      <div class="system-summary">
+        <span id="overall" class="overall" role="status">Checking…</span>
+        <span id="system-meta" class="system-meta"></span>
+      </div>
+      <p id="system-error" class="session-error" role="alert" hidden></p>
+    </header>
+
+    <section class="system-section" aria-labelledby="capabilities-title">
+      <h2 id="capabilities-title">Capabilities</h2>
+      <p>Synthetic means a built-in stand-in; Future integration means not connected yet.</p>
+      <ul id="status-rows" class="status-rows"></ul>
+    </section>
+
+    <section class="system-section" aria-labelledby="flows-title">
+      <h2 id="flows-title">Troubleshooting flows</h2>
+      <p>Only flows approved for demos are offered in the chat.</p>
+      <table class="flow-table">
+        <thead><tr><th scope="col">Flow</th><th scope="col">Version</th><th scope="col">Status</th><th scope="col">Owner</th><th scope="col">Offered</th></tr></thead>
+        <tbody id="flow-rows"></tbody>
+      </table>
+    </section>
+
+    <section class="system-section" aria-labelledby="checks-title">
+      <h2 id="checks-title">Check the setup from a terminal</h2>
+      <p>The setup doctor checks Python, uv, configuration, port, database, flows and confidential files:
+        <code>uv run python scripts/doctor.py</code></p>
+      <p>Reset the demo data: <code>uv run python scripts/dev.py reset</code>, or with Docker
+        <code>docker compose down -v</code></p>
+    </section>
+  </main>
+  <script src="/system.js" defer></script>
+</body>
+</html>

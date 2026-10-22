@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Lint, types, tests, flows and evaluations
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.9.11"
+          enable-cache: true
+      - name: Install the locked environment
+        run: uv sync --locked
+      - name: Formatting
+        run: uv run --frozen ruff format --check .
+      - name: Lint
+        run: uv run --frozen ruff check .
+      - name: Type check
+        run: uv run --frozen mypy
+      - name: Tests, contract fixtures and evaluations
+        run: uv run --frozen pytest
+      - name: Validate troubleshooting flows
+        run: uv run --frozen python -m alsense_chat.flows
+      - name: Widget JavaScript syntax
+        run: for file in src/alsense_chat/static/*.js; do node --check "$file"; done
+      - name: Setup doctor
+        run: cp .env.example .env && uv run --frozen python scripts/doctor.py --ci
+      - name: Package builds
+        run: uv build
+      - name: Bicep compiles
+        run: az bicep build --file infra/main.bicep --stdout > /dev/null
+
+  docker:
+    name: Docker build and smoke test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compose file is valid
+        run: docker compose config --quiet
+      - name: Build and start the demo
+        run: APP_COMMIT="${GITHUB_SHA::7}" docker compose up --build --detach --wait --wait-timeout 180
+      - name: Smoke test
+        run: |
+          curl --fail --silent --show-error http://127.0.0.1:8001/api/health
+          curl --fail --silent --show-error http://127.0.0.1:8001/api/system \
+            | python3 -c "import json, sys; overall = json.load(sys.stdin)['overall']; assert overall['label'] == 'Demo ready', overall"
+          docker compose exec -T app python scripts/doctor.py
+      - name: Dev Container image builds
+        run: docker build --quiet .devcontainer
+      - name: Container logs
+        if: failure()
+        run: docker compose logs
+      - name: Stop
+        if: always()
+        run: docker compose down --volumes
+
+  confidentiality:
+    name: Secrets and protected files
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: No protected local files in the index or the history
+        run: python3 scripts/check_protected_files.py --history
+      - name: Secret scan of the full history
+        run: >-
+          docker run --rm --volume "$PWD:/repo" --workdir /repo
+          ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+          git /repo --redact --verbose --exit-code 1
