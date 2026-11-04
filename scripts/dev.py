@@ -12,6 +12,7 @@ Tasks:
     doctor          Check the setup and explain what to fix
     validate-flows  Validate the shipped flows and FLOWS_FILE, or the files you name
     evals           Run the evaluation cases in evals/ (add --mode model, or folders such as evals/local)
+    latency         Summarize the recorded request timings per stage (p50, p95, max). Add --db PATH, --limit N
     fixtures        Regenerate the contract fixtures and JSON Schemas in fixtures/
     export          Write a history-free zip of the starter to dist/
 
@@ -192,6 +193,12 @@ def evals(_: argparse.Namespace, extra: list[str]) -> int:
     return run(*uv_run(*env_file, "python", "-m", "alsense_chat.evaluation", *extra))
 
 
+def latency(_: argparse.Namespace, extra: list[str]) -> int:
+    # SESSION_DB in .env names the database the local demo writes.
+    env_file = ["--env-file", ".env"] if (ROOT / ".env").is_file() else []
+    return run(*uv_run(*env_file, "python", "-m", "alsense_chat.timing", *extra))
+
+
 def fixtures(_: argparse.Namespace, extra: list[str]) -> int:
     return run(*uv_run("python", "scripts/fixtures.py"))
 
@@ -222,6 +229,7 @@ def main(argv: list[str]) -> int:
     command.add_argument("files", nargs="*")
     command.set_defaults(run=validate_flows)
     tasks.add_parser("evals", help="run the evaluation cases").set_defaults(run=evals)
+    tasks.add_parser("latency", help="per-stage request timings of the local demo").set_defaults(run=latency)
     tasks.add_parser("fixtures", help="regenerate contract fixtures").set_defaults(run=fixtures)
     tasks.add_parser("export", help="history-free zip in dist/").set_defaults(run=export)
     args, extra = parser.parse_known_args(argv)

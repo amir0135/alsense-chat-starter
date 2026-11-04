@@ -925,6 +925,40 @@ function renderFailure(container, message, retryText, retryDisplayText) {
   }
 }
 
+/* The widget's timings of one chat request in whole milliseconds since the question was sent, numbers only.
+   They go to the backend under the request's correlation id once the answer is on screen; failures are
+   ignored. Each mark is also a performance measure ("alsense chat …") for the browser's developer tools. */
+function chatTiming() {
+  const start = performance.now();
+  const ms = {};
+  let correlationId = "";
+  let shown = Promise.resolve();
+  const mark = (name) => {
+    if (name in ms) return;
+    ms[name] = Math.round(performance.now() - start);
+    try {
+      performance.measure(`alsense chat ${name}`, { start, duration: ms[name] });
+    } catch {
+      /* Browsers without measure options still record the numbers. */
+    }
+  };
+  return {
+    mark,
+    received(response) {
+      correlationId = response.headers.get("X-Correlation-ID") || "";
+      mark("headers");
+    },
+    /* The reply is in the page: measure once the browser has had a frame to lay it out and paint it. */
+    rendered() {
+      shown = new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0))).then(() => mark("rendered"));
+    },
+    report() {
+      if (!correlationId) return;
+      shown.then(() => api("/api/timings", { correlation_id: correlationId, ...ms })).catch(() => {});
+    },
+  };
+}
+
 async function send(message, displayText = message) {
   const questionText = message.trim();
   if (!token) throw new Error("Start a synthetic demo session before asking a question.");
@@ -954,12 +988,15 @@ async function send(message, displayText = message) {
   $("messages").append(assistant);
   scrollToLatest();
 
+  const timing = chatTiming();
   try {
     const response = await api("/api/chat", { message: questionText });
+    timing.received(response);
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
     let receivedReply = false;
+    let failed = false;
     while (true) {
       const { value, done } = await reader.read();
       buffer += decoder.decode(value, { stream: !done });
@@ -971,16 +1008,21 @@ async function send(message, displayText = message) {
         const dataLine = lines.filter((line) => line.startsWith("data: ")).map((line) => line.slice(6)).join("\n");
         if (!dataLine) continue;
         const data = JSON.parse(dataLine);
+        timing.mark("first_event");
         if (eventName === "step") setProgress(assistant, TOOL_PROGRESS[data.tool] || "Checking the available information…");
         if (eventName === "reply") {
+          timing.mark("reply");
           receivedReply = true;
           assistant.remove();
           renderReply(data);
+          timing.rendered();
         }
-        if (eventName === "error") throw new Error("The assistant couldn’t complete that answer. Please try again.");
+        if (eventName === "error") failed = true;
       }
       if (done) break;
     }
+    /* Read to the end first: the backend completes its record of the request as the stream closes. */
+    if (failed) throw new Error("The assistant couldn’t complete that answer. Please try again.");
     if (!receivedReply) throw new Error("The answer stream ended early. Please try again.");
     $("message").value = "";
     $("message").style.height = "auto";
@@ -992,6 +1034,7 @@ async function send(message, displayText = message) {
   } finally {
     busy = false;
     updateSessionUI();
+    timing.report();
   }
 }
 

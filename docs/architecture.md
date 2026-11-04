@@ -75,6 +75,21 @@ length), confirmation state, outcome and error category, never tokens or message
 user-safe "Why this result?" explanation built from the same facts. `/api/system` and the `/system` page report,
 without secrets, which capabilities are synthetic, configured, disabled or future integrations.
 
+Chat turns, guided checks, confirmations and status reads also record their timings in the audit record, as
+milliseconds and run counts per stage (`src/alsense_chat/timing.py`): the session lookup; routing, which is the
+scripted assistant's tool selection and, in model mode, also builds the routed tool set; the model history; model
+rounds that select tools (`model_tool_selection`) apart from the round that answers (`model_answer`); each tool
+call including its service (`tool.<name>`, summed as `tools`); the reply checks (`guard`); storing the turn; and
+the offsets of the first streamed event, the reply and the end of the request. With Application Insights
+configured, each stage is also a span whose attributes are only the correlation id, stage, tool, result category
+and round kind. The widget measures its side of a chat request (response headers, first event, reply, reply on
+screen) and sends the numbers with the correlation id to `POST /api/timings`, which accepts them only for a
+request of the same session. `uv run python scripts/dev.py latency` reports p50, p95 and maximum per stage. This
+starter has no iframe embedding and no host dashboard, so message time between frames and the host's rendering
+can't be measured here. A host that embeds the assistant can measure those itself and report them keyed by the
+correlation id, which every response returns and a well-formed incoming `X-Correlation-ID` header sets; the
+message contract between host and widget is not defined in this starter.
+
 SQLite supports one local instance and survives process restarts. The schema is versioned with
 `PRAGMA user_version` and migrated in place at startup. It is not a shared cloud session store. A real
 distributed deployment needs a store with tenant/user ownership, expiry, concurrency control, and idempotent

@@ -73,6 +73,12 @@ def confirmed_by_service(ctx: Context) -> bool:
 
 
 def guard(raw: str, ctx: Context) -> Reply:
+    """Parse and check a reply before it is released, timed as the guard stage."""
+    with ctx.timings.stage("guard"):
+        return _checked(raw, ctx)
+
+
+def _checked(raw: str, ctx: Context) -> Reply:
     reply = Reply.model_validate_json(raw)
     if reply.status not in MODEL_STATUSES:
         raise ValueError("Only the backend reports errors.")
@@ -264,7 +270,9 @@ JSON_COMMANDS = {"prepare_report", "prepare_scheduled_report", "prepare_support_
 
 def demo_run(message: str, ctx: Context) -> Iterator[tuple[str, dict]]:
     """Deterministic local harness, not an AI model. Slash commands exercise the real tool handlers."""
-    route(message, ctx)
+    # Routing picks the domains and their tools: the scripted assistant's tool selection.
+    with ctx.timings.stage("route"):
+        route(message, ctx)
     command, _, rest = message.partition(" ")
     command = command.lower()
     if command == "/flows":
@@ -384,8 +392,13 @@ class FoundryRunner:
         ctx.assistant = "model"
         if "model_unavailable" in ctx.faults:
             raise ModelUnavailable()
-        history = ctx.store.history(ctx.session_id)
-        route(message, ctx)
+        with ctx.timings.stage("history"):
+            history = ctx.store.history(ctx.session_id)
+        with ctx.timings.stage("route"):
+            route(message, ctx)
+            # Only the domains this request needs: their instructions and their model tools, nothing else.
+            instructions = load_agent().instructions(ctx.domains)
+            tools = tool_definitions(ctx.offered)
         items: list[dict[str, Any]] = []
         for turn in history:
             items.extend(
@@ -398,22 +411,23 @@ class FoundryRunner:
                 ]
             )
         items.append({"role": "user", "content": message})
-        # Only the domains this request needs: their instructions and their model tools, nothing else.
-        instructions = load_agent().instructions(ctx.domains)
-        tools = tool_definitions(ctx.offered)
         repaired = False
         for _ in range(12):
-            response = self.create(
-                model=self.deployment,
-                instructions=instructions,
-                input=cast(Any, items),
-                tools=cast(Any, tools),
-                store=False,
-                max_output_tokens=3000,
-            )
-            if response.status != "completed":
-                raise RuntimeError("Model response incomplete or blocked; no answer released.")
-            calls = [item for item in response.output if item.type == "function_call"]
+            # A round whose output calls tools is the model selecting tools; a round without calls answers.
+            with ctx.timings.stage("model", "model_failed") as model_round:
+                response = self.create(
+                    model=self.deployment,
+                    instructions=instructions,
+                    input=cast(Any, items),
+                    tools=cast(Any, tools),
+                    store=False,
+                    max_output_tokens=3000,
+                )
+                if response.status != "completed":
+                    raise RuntimeError("Model response incomplete or blocked; no answer released.")
+                calls = [item for item in response.output if item.type == "function_call"]
+                kind = "tool_selection" if calls else "answer"
+                model_round.keys, model_round.attributes["round_kind"] = (f"model_{kind}",), kind
             if calls:
                 items.extend(item.model_dump(exclude_none=True) for item in response.output)
                 for call in calls:

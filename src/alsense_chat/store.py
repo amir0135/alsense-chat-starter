@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .adapters.contracts import User
+from .timing import valid_record
 
 # Append-only. Databases created before versioning report user_version 0 and already have migration 1's tables.
 MIGRATIONS = (
@@ -54,6 +55,11 @@ MIGRATIONS = (
     ALTER TABLE audit ADD COLUMN domains TEXT NOT NULL DEFAULT '[]';
     ALTER TABLE audit ADD COLUMN offered_tools TEXT NOT NULL DEFAULT '[]'
     """,
+    """
+    ALTER TABLE audit ADD COLUMN assistant TEXT;
+    ALTER TABLE audit ADD COLUMN timings TEXT NOT NULL DEFAULT '{}';
+    CREATE UNIQUE INDEX audit_client_timing ON audit (session_id, correlation_id) WHERE event = 'client_timing'
+    """,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 AUDIT_FIELDS = (
@@ -72,10 +78,16 @@ AUDIT_FIELDS = (
     "confirmation",
     "outcome",
     "error_category",
+    "assistant",
+    "timings",
 )
 
 
 class MissingRecord(Exception):
+    pass
+
+
+class DuplicateRecord(Exception):
     pass
 
 
@@ -218,12 +230,30 @@ class Store:
         values = {name: record.get(name) for name in AUDIT_FIELDS}
         for name in ("tools", "inputs", "domains", "offered_tools"):
             values[name] = json.dumps(values[name] or [])
+        timings = values["timings"] or {}
+        if not valid_record(timings):
+            raise ValueError("Timings hold milliseconds and run counts for known stages only.")
+        values["timings"] = json.dumps(timings, allow_nan=False)
+        try:
+            with self.connection() as db:
+                db.execute(
+                    f"INSERT INTO audit (created, {', '.join(AUDIT_FIELDS)}) "
+                    f"VALUES (?, {', '.join('?' for _ in AUDIT_FIELDS)})",
+                    (time.time(), *values.values()),
+                )
+        except sqlite3.IntegrityError as exc:
+            # The only unique audit records are the widget's timings: one per request and session.
+            if exc.sqlite_errorname != "SQLITE_CONSTRAINT_UNIQUE":
+                raise
+            raise DuplicateRecord("Already recorded.") from None
+
+    def request_count(self, session_id: str, correlation_id: str) -> int:
+        """How many chat turns or guided-check steps of one session carry this correlation id."""
         with self.connection() as db:
-            db.execute(
-                f"INSERT INTO audit (created, {', '.join(AUDIT_FIELDS)}) "
-                f"VALUES (?, {', '.join('?' for _ in AUDIT_FIELDS)})",
-                (time.time(), *values.values()),
-            )
+            return db.execute(
+                "SELECT COUNT(*) FROM audit WHERE session_id=? AND correlation_id=? AND event IN ('chat', 'flow')",
+                (session_id, correlation_id),
+            ).fetchone()[0]
 
     def audit_trail(self, session_id: str | None = None, limit: int = 100) -> list[dict]:
         query = "SELECT * FROM audit" + (" WHERE session_id=?" if session_id else "") + " ORDER BY id DESC LIMIT ?"
@@ -232,7 +262,7 @@ class Store:
         records = []
         for row in reversed(rows):
             record = dict(row)
-            for name in ("tools", "inputs", "domains", "offered_tools"):
+            for name in ("tools", "inputs", "domains", "offered_tools", "timings"):
                 record[name] = json.loads(record[name])
             records.append(record)
         return records

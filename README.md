@@ -196,6 +196,7 @@ uv run python scripts/dev.py test      # unit, API, contract-fixture and evaluat
 uv run python scripts/dev.py lint      # ruff format and lint, mypy, widget JavaScript, protected files
 uv run python scripts/dev.py evals     # behaviour cases in evals/ only, a pass/fail line per case
 uv run python scripts/dev.py validate-flows [FILE ...]
+uv run python scripts/dev.py latency   # per-stage request timings the local demo recorded (p50, p95, max)
 ```
 
 `tests/test_scenarios.py` runs every demo scenario and checks its promised result. Each evaluation case in `evals/`

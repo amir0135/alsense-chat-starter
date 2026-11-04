@@ -2,6 +2,7 @@ import hmac
 import json
 import logging
 import re
+import time
 import uuid
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
@@ -22,12 +23,15 @@ from .flows import load_flows
 from .readiness import app_version, system_status
 from .runner import FoundryRunner, demo_run, error_reply
 from .scenarios import load_scenarios, unavailable_reason
-from .store import MissingRecord, Store
+from .store import DuplicateRecord, MissingRecord, Store
+from .timing import Timings
 from .tools import FEATURE_OFF, Context, check_registry
 
 log = logging.getLogger(__name__)
 bearer = HTTPBearer(auto_error=False)
 CORRELATION_ID = re.compile(r"[A-Za-z0-9-]{8,64}")
+# Widget timings: whole milliseconds since the question was sent, up to ten minutes.
+ClientMilliseconds = Annotated[int, Field(strict=True, ge=0, le=600_000)]
 
 
 class Login(BaseModel):
@@ -51,8 +55,22 @@ class Confirmation(BaseModel):
     confirmed: Literal[True]
 
 
+class ClientTiming(BaseModel):
+    """The widget's own timings of one chat request in this session, joined to it by correlation id."""
+
+    model_config = ConfigDict(extra="forbid")
+    correlation_id: str = Field(pattern=rf"^{CORRELATION_ID.pattern}$")
+    headers: ClientMilliseconds
+    first_event: ClientMilliseconds | None = None
+    reply: ClientMilliseconds | None = None
+    rendered: ClientMilliseconds | None = None
+
+
 class CorrelationMiddleware:
-    """Give every request a correlation id (reusing a well-formed X-Correlation-ID) and echo it back."""
+    """Give every request a correlation id (reusing a well-formed X-Correlation-ID) and echo it back.
+
+    It also notes when the request arrived, the start of the request's timings.
+    """
 
     def __init__(self, app):
         self.app = app
@@ -61,9 +79,11 @@ class CorrelationMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
+        started = time.perf_counter()
         incoming = dict(scope["headers"]).get(b"x-correlation-id", b"").decode("latin-1")
         correlation_id = incoming if CORRELATION_ID.fullmatch(incoming) else uuid.uuid4().hex[:16]
-        scope.setdefault("state", {})["correlation_id"] = correlation_id
+        state = scope.setdefault("state", {})
+        state["correlation_id"], state["started"] = correlation_id, started
 
         async def send_with_id(message):
             if message["type"] == "http.response.start":
@@ -90,8 +110,10 @@ def context(request: Request, credentials: Annotated[HTTPAuthorizationCredential
         raise HTTPException(403, "Chat is disabled by the backend feature flag.")
     if credentials is None:
         raise HTTPException(401, "A bearer session token is required.")
+    timings = Timings(request.state.correlation_id, request.state.started)
     try:
-        session = state.store.authenticate(credentials.credentials)
+        with timings.stage("session"):
+            session = state.store.authenticate(credentials.credentials)
     except MissingRecord as exc:
         raise HTTPException(401, str(exc)) from None
     if not session.user.internal:
@@ -108,6 +130,7 @@ def context(request: Request, credentials: Annotated[HTTPAuthorizationCredential
         session_faults=session.faults,
         correlation_id=request.state.correlation_id,
         scenario=session.scenario,
+        timings=timings,
     )
 
 
@@ -121,12 +144,14 @@ def audit_reply(ctx: Context, reply: dict | None) -> None:
         outcome, category = f"{flow['outcome']}:{flow['category']}", f"flow:{flow['kind']}"
     else:
         outcome, category = status, f"flow:{flow['kind']}" if flow else status
+    event = "flow" if flow.get("id") else "chat"
+    timings = ctx.timings.record()
     ctx.store.audit(
         correlation_id=ctx.correlation_id,
         session_id=ctx.session_id,
         persona=ctx.user.id,
         scenario=ctx.scenario or None,
-        event="flow" if flow.get("id") else "chat",
+        event=event,
         flow_id=flow.get("id"),
         flow_version=flow.get("version"),
         tools=[{"tool": call["tool"], "result": call["result"]} for call in ctx.calls],
@@ -137,9 +162,26 @@ def audit_reply(ctx: Context, reply: dict | None) -> None:
         confirmation="prepared" if ctx.actions else "none",
         outcome=outcome,
         error_category=error.get("category") or (None if reply else "runtime_error"),
+        assistant=ctx.assistant,
+        timings=timings,
     )
+    total = timings["ms"].get("total", 0.0)
     log.info(
-        "chat %s persona=%s domains=%s outcome=%s", ctx.correlation_id, ctx.user.id, ",".join(ctx.domains), outcome
+        "chat %s persona=%s domains=%s outcome=%s total_ms=%.0f",
+        ctx.correlation_id,
+        ctx.user.id,
+        ",".join(ctx.domains),
+        outcome,
+        total,
+        # Custom dimensions in Application Insights: ids, categories and numbers only.
+        extra={
+            "correlation_id": ctx.correlation_id,
+            "event": event,
+            "assistant": ctx.assistant,
+            "outcome": outcome,
+            "total_ms": total,
+            "stage_ms": json.dumps(timings["ms"]),
+        },
     )
 
 
@@ -319,6 +361,16 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         use_model = runner is not None and not body.message.startswith("/")
         ctx.assistant = "model" if use_model else "scripted"
 
+        def frame(kind: str, data: dict) -> str:
+            ctx.timings.mark("first_event")
+            if kind == "reply":
+                ctx.timings.mark("reply")
+            return f"event: {kind}\ndata: {json.dumps(data)}\n\n"
+
+        def persist(reply: dict) -> None:
+            with ctx.timings.stage("persist"):
+                ctx.store.add_turn(ctx.session_id, body.message, reply)
+
         def events() -> Iterator[str]:
             reply = None
             try:
@@ -327,17 +379,19 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
                     for kind, data in run:
                         if kind == "reply":
                             reply = data
-                            ctx.store.add_turn(ctx.session_id, body.message, data)
-                        yield f"event: {kind}\ndata: {json.dumps(data)}\n\n"
+                            persist(data)
+                        yield frame(kind, data)
                 except IntegrationError as exc:
                     reply = error_reply(exc, ctx)
-                    ctx.store.add_turn(ctx.session_id, body.message, reply)
-                    yield f"event: reply\ndata: {json.dumps(reply)}\n\n"
+                    persist(reply)
+                    yield frame("reply", reply)
             except Exception:
                 log.exception("Chat %s failed; no unverified answer released", ctx.correlation_id)
                 ctx.store.record_unanswered(ctx.session_id, "runtime_error")
+                ctx.timings.mark("first_event")
                 yield 'event: error\ndata: {"message":"The run failed. Check the backend log and retry."}\n\n'
             finally:
+                ctx.timings.mark("total")
                 audit_reply(ctx, reply)
 
         return StreamingResponse(events(), media_type="text/event-stream", headers={"Cache-Control": "no-store"})
@@ -352,8 +406,9 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
             if feature not in ctx.features:
                 error = "disabled"
                 raise HTTPException(403, FEATURE_OFF[feature])
-            ctx.validate_action(kind, action["payload"])
-            result = ctx.store.submit(ctx.session_id, action_id, ctx.submit_action)
+            with ctx.timings.stage("tool", "tools", f"tool.submit_{kind}", tool=f"submit_{kind}"):
+                ctx.validate_action(kind, action["payload"])
+                result = ctx.store.submit(ctx.session_id, action_id, ctx.submit_action)
             outcome = result.get("status", "submitted")
             return result
         except MissingRecord:
@@ -373,6 +428,7 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
             error = "invalid_input"
             raise HTTPException(403, "Action is no longer permitted.") from None
         finally:
+            ctx.timings.mark("total")
             ctx.store.audit(
                 correlation_id=ctx.correlation_id,
                 session_id=ctx.session_id,
@@ -383,12 +439,14 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
                 confirmation="confirmed",
                 outcome=outcome,
                 error_category=error,
+                timings=ctx.timings.record(),
             )
 
     @app.get("/api/actions/{action_id}/status")
     def action_status(action_id: str, ctx: Annotated[Context, Depends(context)]):
         """A confirmed report's job state and download link, so the widget can show the link right away."""
         output = ctx.execute("get_report_status", {"action_id": action_id}, caller="user")
+        ctx.timings.mark("total")
         ctx.store.audit(
             correlation_id=ctx.correlation_id,
             session_id=ctx.session_id,
@@ -398,6 +456,7 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
             tools=[{"tool": call["tool"], "result": call["result"]} for call in ctx.calls],
             outcome=ctx.calls[-1]["result"] if ctx.calls else None,
             error_category=output.get("category"),
+            timings=ctx.timings.record(),
         )
         if "error" not in output:
             return output["data"]
@@ -405,6 +464,28 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
             output["category"], 503
         )
         raise HTTPException(status, output["error"], headers={"X-Error-Category": output["category"]})
+
+    @app.post("/api/timings", status_code=204)
+    def client_timing(body: ClientTiming, ctx: Annotated[Context, Depends(context)]) -> None:
+        """Record the widget's timings of a chat request from this session, once, numbers only."""
+        requests = ctx.store.request_count(ctx.session_id, body.correlation_id)
+        if not requests:
+            raise HTTPException(404, "Request unavailable.")
+        if requests > 1:
+            # A reused X-Correlation-ID can't be matched to one request.
+            raise HTTPException(409, "Timings can't be matched to a single request.")
+        ms = body.model_dump(exclude={"correlation_id"}, exclude_none=True)
+        try:
+            ctx.store.audit(
+                correlation_id=body.correlation_id,
+                session_id=ctx.session_id,
+                persona=ctx.user.id,
+                scenario=ctx.scenario or None,
+                event="client_timing",
+                timings={"ms": ms, "count": dict.fromkeys(ms, 1)},
+            )
+        except DuplicateRecord:
+            raise HTTPException(409, "Timings already recorded.") from None
 
     @app.get("/reference/{path:path}")
     def reference(path: str):

@@ -72,8 +72,9 @@ real sign-in, Search access and shared persistence. Do not reuse another environ
 customer data.
 
 The model's configured content filters are not a complete application Content Safety integration. Define the
-organization's input/output handling and test blocked responses before enabling real traffic. Add tracing spans
-without token or message capture and add user-approved data retention policies.
+organization's input/output handling and test blocked responses before enabling real traffic. The stage spans in
+`src/alsense_chat/timing.py` carry no token or message text; keep any spans you add the same, and add
+user-approved data retention policies.
 
 The current internal-user flag is a mock property. In production use verified directory/tenant/group eligibility
 and a backend-controlled rollout flag. It is not sufficient to hide the widget in the UI.
