@@ -197,6 +197,7 @@ uv run python scripts/dev.py lint      # ruff format and lint, mypy, widget Java
 uv run python scripts/dev.py evals     # behaviour cases in evals/ only, a pass/fail line per case
 uv run python scripts/dev.py validate-flows [FILE ...]
 uv run python scripts/dev.py latency   # per-stage request timings the local demo recorded (p50, p95, max)
+uv run python scripts/dev.py feedback  # answer ratings with their context, never question or answer text
 ```
 
 `tests/test_scenarios.py` runs every demo scenario and checks its promised result. Each evaluation case in `evals/`

@@ -90,6 +90,20 @@ can't be measured here. A host that embeds the assistant can measure those itsel
 correlation id, which every response returns and a well-formed incoming `X-Correlation-ID` header sets; the
 message contract between host and widget is not defined in this starter.
 
+Every stored reply gets a random answer id, kept with the turn and the request's correlation id. The widget
+offers Helpful and Not helpful on completed replies, not on guided-check steps that still wait for an answer;
+`POST /api/answers/{answer_id}/feedback` accepts a rating for an answer of the same session and, after a thumbs
+down, one reason from a fixed list (incorrect, incomplete, too slow, other). Each answer has one feedback row; a
+later rating replaces it. The row keeps the session and user id, the correlation id and a snapshot of categories
+and numbers: reply status, routed domains, guided-check id, version and outcome, tools with their result
+categories, error category, assistant, data source, app version and total latency. Each value must be one the
+code or the loaded flows define; anything else is stored as "other", a tool name the model invented as
+"unknown", and a tool result keeps only its kind and a count or known state, never an upstream detail. It never
+holds the question, the answer text, sources, guided-check answers or free text; those stay in the session's
+turns, which the review does not read. A rating is accepted once the answer's request is recorded, which the
+widget waits for. `uv run python scripts/dev.py feedback` lists the ratings, newest first. Audit records now
+also carry the app version and data source that produced them, and a chat record the answer id of its reply.
+
 SQLite supports one local instance and survives process restarts. The schema is versioned with
 `PRAGMA user_version` and migrated in place at startup. It is not a shared cloud session store. A real
 distributed deployment needs a store with tenant/user ownership, expiry, concurrency control, and idempotent

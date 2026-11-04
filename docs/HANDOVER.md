@@ -107,10 +107,12 @@ uv run python scripts/dev.py lint     # formatting, lint, types, JavaScript, pro
 uv run python scripts/dev.py evals    # only the evaluation cases, with a pass/fail line per case
 uv run python scripts/dev.py evals --mode model evals/local   # your own cases against the Foundry model
 uv run python scripts/dev.py latency  # per-stage timings of the requests the local demo recorded
+uv run python scripts/dev.py feedback # answer ratings with their context, never question or answer text
 ```
 
-CI runs the same checks, plus the Docker smoke test, the Dev Container build and secret scans. `latency` reads
-the demo database (`--db PATH`, `--limit N`); [`architecture.md`](architecture.md) lists the stages it reports.
+CI runs the same checks, plus the Docker smoke test, the Dev Container build and secret scans. `latency` and
+`feedback` read the demo database (`--db PATH`, `--limit N`; `feedback` also takes `--rating up|down` and
+`--json`); [`architecture.md`](architecture.md) lists the stages and the feedback context they report.
 
 ## Diagnosing startup problems
 

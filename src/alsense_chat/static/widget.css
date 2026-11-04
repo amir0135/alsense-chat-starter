@@ -299,6 +299,23 @@ input:hover, select:hover, textarea:hover { border-color: var(--muted); }
 }
 .why-list dt { color: var(--muted); }
 .why-list dd { margin: 0; overflow-wrap: anywhere; }
+.answer-feedback { margin-top: 10px; font-size: 12px; }
+.feedback-row, .feedback-reasons { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.feedback-reasons { margin-top: 8px; }
+.feedback-prompt { color: var(--muted); font-weight: 650; }
+.feedback-button, .feedback-reason {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 4px 11px;
+  border: 1px solid var(--rule); border-radius: 99px; background: var(--paper); color: var(--ink); font-size: 12px; font-weight: 650;
+  transition: border-color 150ms ease-out, background-color 150ms ease-out, color 150ms ease-out;
+}
+.feedback-button:hover, .feedback-reason:hover { border-color: var(--accent); background: var(--accent-wash); }
+.feedback-button[aria-pressed="true"], .feedback-reason[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-wash); color: var(--accent-hover); }
+.answer-feedback[aria-busy="true"] button { cursor: progress; }
+.thumb-icon { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.feedback-down .thumb-icon { transform: rotate(180deg); }
+.feedback-note { margin: 6px 0 0; color: var(--muted); }
+.feedback-note:empty { margin: 0; }
+.feedback-note.is-failed { color: var(--error); }
 
 .scenario-gallery { width: min(100% - 56px, 860px); margin: 0 auto; padding: 34px 0 40px; }
 .gallery-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }

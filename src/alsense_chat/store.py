@@ -60,6 +60,26 @@ MIGRATIONS = (
     ALTER TABLE audit ADD COLUMN timings TEXT NOT NULL DEFAULT '{}';
     CREATE UNIQUE INDEX audit_client_timing ON audit (session_id, correlation_id) WHERE event = 'client_timing'
     """,
+    """
+    ALTER TABLE turns ADD COLUMN answer_id TEXT;
+    ALTER TABLE turns ADD COLUMN correlation_id TEXT;
+    CREATE UNIQUE INDEX turns_answer ON turns (answer_id);
+    ALTER TABLE audit ADD COLUMN answer_id TEXT;
+    ALTER TABLE audit ADD COLUMN app_version TEXT;
+    ALTER TABLE audit ADD COLUMN data_source TEXT;
+    CREATE INDEX audit_answer ON audit (answer_id);
+    CREATE TABLE feedback (
+        answer_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        correlation_id TEXT,
+        rating TEXT NOT NULL,
+        reason TEXT,
+        context TEXT NOT NULL,
+        created REAL NOT NULL,
+        updated REAL NOT NULL
+    )
+    """,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 AUDIT_FIELDS = (
@@ -80,7 +100,12 @@ AUDIT_FIELDS = (
     "error_category",
     "assistant",
     "timings",
+    "answer_id",
+    "app_version",
+    "data_source",
 )
+# Written with every audit record unless the caller sets them.
+STAMP_FIELDS = ("app_version", "data_source")
 
 
 class MissingRecord(Exception):
@@ -106,8 +131,10 @@ class SessionRecord:
 class Store:
     """Persistent local POC store. Not a distributed multi-replica database."""
 
-    def __init__(self, path: str):
+    def __init__(self, path: str, stamp: dict[str, str] | None = None):
         self.path = path
+        # The app version and data source that serve this process, so each audit record says what produced it.
+        self.stamp = {name: value for name, value in (stamp or {}).items() if name in STAMP_FIELDS}
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.migrate()
 
@@ -200,12 +227,25 @@ class Store:
             scenario=row["scenario"],
         )
 
-    def add_turn(self, session_id: str, question: str, reply: dict) -> None:
+    def add_turn(
+        self, session_id: str, question: str, reply: dict, answer_id: str | None = None, correlation_id: str = ""
+    ) -> None:
         with self.connection() as db:
             db.execute(
-                "INSERT INTO turns (session_id, question, reply, created) VALUES (?, ?, ?, ?)",
-                (session_id, question, json.dumps(reply), time.time()),
+                "INSERT INTO turns (session_id, question, reply, created, answer_id, correlation_id) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (session_id, question, json.dumps(reply), time.time(), answer_id, correlation_id or None),
             )
+
+    def answer(self, session_id: str, answer_id: str) -> dict:
+        """A stored reply of this session by its answer id, with the correlation id of the request that made it."""
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT reply, correlation_id FROM turns WHERE answer_id=? AND session_id=?", (answer_id, session_id)
+            ).fetchone()
+        if row is None:
+            raise MissingRecord("Answer unavailable.")
+        return {"reply": json.loads(row["reply"]), "correlation_id": row["correlation_id"]}
 
     def history(self, session_id: str) -> list[dict]:
         with self.connection() as db:
@@ -228,6 +268,8 @@ class Store:
         if unknown:
             raise ValueError(f"Unknown audit fields: {sorted(unknown)}")
         values = {name: record.get(name) for name in AUDIT_FIELDS}
+        for name, value in self.stamp.items():
+            values[name] = values[name] or value
         for name in ("tools", "inputs", "domains", "offered_tools"):
             values[name] = json.dumps(values[name] or [])
         timings = values["timings"] or {}
@@ -255,17 +297,62 @@ class Store:
                 (session_id, correlation_id),
             ).fetchone()[0]
 
+    def answer_record(self, session_id: str, answer_id: str) -> dict | None:
+        """The audit record of the chat turn or guided-check step that produced an answer of this session."""
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT * FROM audit WHERE session_id=? AND answer_id=? AND event IN ('chat', 'flow') "
+                "ORDER BY id LIMIT 1",
+                (session_id, answer_id),
+            ).fetchone()
+        return self.decode_audit(row) if row else None
+
     def audit_trail(self, session_id: str | None = None, limit: int = 100) -> list[dict]:
         query = "SELECT * FROM audit" + (" WHERE session_id=?" if session_id else "") + " ORDER BY id DESC LIMIT ?"
         with self.connection() as db:
             rows = db.execute(query, (session_id, limit) if session_id else (limit,)).fetchall()
-        records = []
-        for row in reversed(rows):
-            record = dict(row)
-            for name in ("tools", "inputs", "domains", "offered_tools", "timings"):
-                record[name] = json.loads(record[name])
-            records.append(record)
-        return records
+        return [self.decode_audit(row) for row in reversed(rows)]
+
+    @staticmethod
+    def decode_audit(row: sqlite3.Row) -> dict:
+        record = dict(row)
+        for name in ("tools", "inputs", "domains", "offered_tools", "timings"):
+            record[name] = json.loads(record[name])
+        return record
+
+    def save_feedback(
+        self,
+        answer_id: str,
+        *,
+        session_id: str,
+        user_id: str,
+        correlation_id: str | None,
+        rating: str,
+        reason: str | None,
+        context: dict,
+    ) -> dict:
+        """One rating per answer: a later rating replaces it, and the context is captured again with it."""
+        now = time.time()
+        with self.connection() as db:
+            db.execute(
+                "INSERT INTO feedback (answer_id, session_id, user_id, correlation_id, rating, reason, context, "
+                "created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT (answer_id) DO UPDATE SET rating=excluded.rating, reason=excluded.reason, "
+                "context=excluded.context, updated=excluded.updated",
+                (
+                    answer_id,
+                    session_id,
+                    user_id,
+                    correlation_id,
+                    rating,
+                    reason,
+                    json.dumps(context, allow_nan=False),
+                    now,
+                    now,
+                ),
+            )
+            row = db.execute("SELECT * FROM feedback WHERE answer_id=?", (answer_id,)).fetchone()
+        return {**dict(row), "context": json.loads(row["context"])}
 
     def prepare(self, session_id: str, kind: str, payload: dict) -> dict:
         action_id = secrets.token_urlsafe(24)

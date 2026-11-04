@@ -2,6 +2,7 @@ import hmac
 import json
 import logging
 import re
+import secrets
 import time
 import uuid
 from collections.abc import Iterator
@@ -12,15 +13,16 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .adapters import IntegrationError, Services, build_services
 from .adapters.contracts import User
 from .adapters.interfaces import PersonaDirectory
 from .adapters.synthetic import FAULTS, with_faults
 from .config import ROOT, Settings, load_settings
+from .feedback import Rating, Reason, Vocabulary, answer_context, rateable
 from .flows import load_flows
-from .readiness import app_version, system_status
+from .readiness import app_version, git_commit, system_status
 from .runner import FoundryRunner, demo_run, error_reply
 from .scenarios import load_scenarios, unavailable_reason
 from .store import DuplicateRecord, MissingRecord, Store
@@ -30,6 +32,8 @@ from .tools import FEATURE_OFF, Context, check_registry
 log = logging.getLogger(__name__)
 bearer = HTTPBearer(auto_error=False)
 CORRELATION_ID = re.compile(r"[A-Za-z0-9-]{8,64}")
+# Answer ids are secrets.token_urlsafe(16): 22 URL-safe characters.
+ANSWER_ID = re.compile(r"[A-Za-z0-9_-]{22}")
 # Widget timings: whole milliseconds since the question was sent, up to ten minutes.
 ClientMilliseconds = Annotated[int, Field(strict=True, ge=0, le=600_000)]
 
@@ -53,6 +57,20 @@ class Chat(BaseModel):
 class Confirmation(BaseModel):
     model_config = ConfigDict(extra="forbid")
     confirmed: Literal[True]
+
+
+class Feedback(BaseModel):
+    """A rating of one answer: a reason from the fixed list may explain a thumbs-down. No free text."""
+
+    model_config = ConfigDict(extra="forbid")
+    rating: Rating
+    reason: Reason | None = None
+
+    @model_validator(mode="after")
+    def reason_explains_a_thumbs_down(self) -> "Feedback":
+        if self.reason and self.rating != "down":
+            raise ValueError("Only a thumbs-down takes a reason.")
+        return self
 
 
 class ClientTiming(BaseModel):
@@ -164,6 +182,7 @@ def audit_reply(ctx: Context, reply: dict | None) -> None:
         error_category=error.get("category") or (None if reply else "runtime_error"),
         assistant=ctx.assistant,
         timings=timings,
+        answer_id=(reply or {}).get("answer_id"),
     )
     total = timings["ms"].get("total", 0.0)
     log.info(
@@ -199,6 +218,7 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
     personas = services.identity.personas() if directory else []  # type: ignore[attr-defined]
     persona_ids = {persona["id"] for persona in personas}
     flows = load_flows(settings.flows_file)
+    vocabulary = Vocabulary.build(flows)
     scenarios = load_scenarios(settings.scenarios_file, persona_ids if directory else None)
 
     @asynccontextmanager
@@ -228,7 +248,9 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
     app.add_middleware(CorrelationMiddleware)
     app.state.settings = settings
     app.state.services = services
-    app.state.store = Store(settings.db)
+    commit = settings.app_commit or git_commit()
+    stamp = {"app_version": app_version() + (f"+{commit}" if commit else ""), "data_source": services.kind}
+    app.state.store = Store(settings.db, stamp)
     app.state.flows = flows
     app.state.scenarios = scenarios
     app.state.persona_names = [persona["name"] for persona in personas]
@@ -368,8 +390,10 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
             return f"event: {kind}\ndata: {json.dumps(data)}\n\n"
 
         def persist(reply: dict) -> None:
+            # Every stored reply gets a stable id: the answer that feedback rates.
+            reply["answer_id"] = secrets.token_urlsafe(16)
             with ctx.timings.stage("persist"):
-                ctx.store.add_turn(ctx.session_id, body.message, reply)
+                ctx.store.add_turn(ctx.session_id, body.message, reply, reply["answer_id"], ctx.correlation_id)
 
         def events() -> Iterator[str]:
             reply = None
@@ -486,6 +510,70 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
             )
         except DuplicateRecord:
             raise HTTPException(409, "Timings already recorded.") from None
+
+    @app.post("/api/answers/{answer_id}/feedback")
+    def answer_feedback(answer_id: str, body: Feedback, ctx: Annotated[Context, Depends(context)]):
+        """Rate a completed answer of this session. Stores categories and numbers, never question or answer text."""
+        error = "unexpected"
+        try:
+            if not ANSWER_ID.fullmatch(answer_id):
+                raise MissingRecord("Answer unavailable.")
+            answer = ctx.store.answer(ctx.session_id, answer_id)
+            if not rateable(answer["reply"]):
+                error = "not_rateable"
+                raise HTTPException(409, "Only completed answers can be rated.")
+            record = ctx.store.answer_record(ctx.session_id, answer_id)
+            if record is None:
+                # The request's record is written as its stream closes; until then the context is incomplete.
+                error = "pending"
+                raise HTTPException(409, "This answer is still being recorded. Try again in a moment.")
+            with ctx.timings.stage("persist"):
+                saved = ctx.store.save_feedback(
+                    answer_id,
+                    session_id=ctx.session_id,
+                    user_id=ctx.user.id,
+                    correlation_id=answer["correlation_id"],
+                    rating=body.rating,
+                    reason=body.reason,
+                    context=answer_context(answer["reply"], record, vocabulary),
+                )
+            error = ""
+            return {"answer_id": answer_id, "rating": saved["rating"], "reason": saved["reason"]}
+        except MissingRecord:
+            error = "not_found"
+            raise HTTPException(404, "Answer unavailable.") from None
+        finally:
+            ctx.timings.mark("total")
+            timings = ctx.timings.record()
+            outcome = body.rating if not error else "not_recorded"
+            rated = {"answer_id": answer_id, "rating": body.rating, **({"reason": body.reason} if body.reason else {})}
+            ctx.store.audit(
+                correlation_id=ctx.correlation_id,
+                session_id=ctx.session_id,
+                persona=ctx.user.id,
+                scenario=ctx.scenario or None,
+                event="feedback",
+                # An id that matched no answer of this session is client input: it is never recorded.
+                inputs=[] if error else [rated],
+                outcome=outcome,
+                error_category=error or None,
+                timings=timings,
+            )
+            total = timings["ms"].get("total", 0.0)
+            log.info(
+                "feedback %s persona=%s outcome=%s total_ms=%.0f",
+                ctx.correlation_id,
+                ctx.user.id,
+                outcome,
+                total,
+                extra={
+                    "correlation_id": ctx.correlation_id,
+                    "event": "feedback",
+                    "outcome": outcome,
+                    "total_ms": total,
+                    "stage_ms": json.dumps(timings["ms"]),
+                },
+            )
 
     @app.get("/reference/{path:path}")
     def reference(path: str):

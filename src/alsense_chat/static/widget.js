@@ -898,6 +898,99 @@ function renderReply(reply) {
   $("messages").append(article);
   setActiveFlow(flow);
   scrollToLatest();
+  return body;
+}
+
+const FEEDBACK_REASONS = {
+  incorrect: "Incorrect",
+  incomplete: "Incomplete",
+  too_slow: "Too slow",
+  other: "Something else",
+};
+/* Guided-check steps still waiting for an answer, and the menu of checks, are not answers yet. */
+const WAITING_FLOW_KINDS = new Set(["menu", "question", "site", "confirm"]);
+
+function thumbIcon() {
+  const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  icon.setAttribute("viewBox", "0 0 20 20");
+  icon.setAttribute("aria-hidden", "true");
+  icon.setAttribute("class", "thumb-icon");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", "M3 9h2.5v8H3zM5.5 9.5l3-6c.4-.9 1.7-.8 2 .2.2.5.2 1 .1 1.5L10 8h5.2c1.1 0 1.9 1 1.7 2.1l-1 5.3c-.2 1-1 1.6-2 1.6H5.5");
+  icon.append(path);
+  return icon;
+}
+
+/* Thumbs on a completed answer, saved against its answer id. The rating can change, and a thumbs-down can add
+   one reason from a fixed list. Saving never blocks the conversation: a failure shows a short note instead. */
+function renderFeedback(reply, parent) {
+  if (typeof reply.answer_id !== "string" || WAITING_FLOW_KINDS.has(reply.flow?.kind)) return;
+  const box = node("div", "answer-feedback");
+  const group = (className, promptText, key) => {
+    const element = node("div", className);
+    const prompt = node("span", "feedback-prompt", promptText);
+    prompt.id = `feedback-${key}-${reply.answer_id}`;
+    element.setAttribute("role", "group");
+    element.setAttribute("aria-labelledby", prompt.id);
+    element.append(prompt);
+    return element;
+  };
+  const row = group("feedback-row", "Was this answer useful?", "rating");
+  const buttons = {};
+  for (const [rating, label] of [["up", "Helpful"], ["down", "Not helpful"]]) {
+    const button = node("button", `feedback-button feedback-${rating}`);
+    button.type = "button";
+    button.setAttribute("aria-pressed", "false");
+    button.append(thumbIcon(), document.createTextNode(label));
+    buttons[rating] = button;
+    row.append(button);
+  }
+  const reasons = group("feedback-reasons", "What went wrong? (optional)", "reason");
+  reasons.hidden = true;
+  const reasonButtons = {};
+  for (const [reason, label] of Object.entries(FEEDBACK_REASONS)) {
+    const button = node("button", "feedback-reason", label);
+    button.type = "button";
+    button.setAttribute("aria-pressed", "false");
+    reasonButtons[reason] = button;
+    reasons.append(button);
+  }
+  /* A live region from the start, so each result is announced, including a repeated one. */
+  const note = node("p", "feedback-note");
+  note.setAttribute("role", "status");
+  box.append(row, reasons, note);
+
+  let saved = { rating: "", reason: null };
+  let saving = false;
+  const save = async (rating, reason = null) => {
+    if (saving || (rating === saved.rating && reason === saved.reason)) return;
+    saving = true;
+    box.setAttribute("aria-busy", "true");
+    note.textContent = "";
+    try {
+      const response = await api(`/api/answers/${encodeURIComponent(reply.answer_id)}/feedback`,
+        reason ? { rating, reason } : { rating });
+      const result = await response.json();
+      saved = { rating: result.rating, reason: result.reason || null };
+      note.textContent = "Thanks for the feedback.";
+      note.classList.remove("is-failed");
+    } catch {
+      note.textContent = "Your feedback couldn’t be saved. Try again.";
+      note.classList.add("is-failed");
+    } finally {
+      saving = false;
+      box.removeAttribute("aria-busy");
+      for (const [value, button] of Object.entries(buttons)) button.setAttribute("aria-pressed", String(saved.rating === value));
+      for (const [value, button] of Object.entries(reasonButtons)) button.setAttribute("aria-pressed", String(saved.reason === value));
+      reasons.hidden = saved.rating !== "down";
+    }
+  };
+  buttons.up.addEventListener("click", () => save("up"));
+  buttons.down.addEventListener("click", () => save("down", saved.rating === "down" ? saved.reason : null));
+  for (const [reason, button] of Object.entries(reasonButtons)) {
+    button.addEventListener("click", () => save("down", saved.reason === reason ? null : reason));
+  }
+  parent.append(box);
 }
 
 function scrollToLatest() {
@@ -995,7 +1088,7 @@ async function send(message, displayText = message) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
-    let receivedReply = false;
+    let received = null;
     let failed = false;
     while (true) {
       const { value, done } = await reader.read();
@@ -1012,9 +1105,8 @@ async function send(message, displayText = message) {
         if (eventName === "step") setProgress(assistant, TOOL_PROGRESS[data.tool] || "Checking the available information…");
         if (eventName === "reply") {
           timing.mark("reply");
-          receivedReply = true;
           assistant.remove();
-          renderReply(data);
+          received = { reply: data, body: renderReply(data) };
           timing.rendered();
         }
         if (eventName === "error") failed = true;
@@ -1023,7 +1115,10 @@ async function send(message, displayText = message) {
     }
     /* Read to the end first: the backend completes its record of the request as the stream closes. */
     if (failed) throw new Error("The assistant couldn’t complete that answer. Please try again.");
-    if (!receivedReply) throw new Error("The answer stream ended early. Please try again.");
+    if (!received) throw new Error("The answer stream ended early. Please try again.");
+    /* Rating opens only now, so feedback always finds the request's complete record. */
+    renderFeedback(received.reply, received.body);
+    scrollToLatest();
     $("message").value = "";
     $("message").style.height = "auto";
     return true;

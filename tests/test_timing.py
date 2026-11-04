@@ -265,7 +265,7 @@ def test_audit_records_from_before_timings_migrate_without_them(tmp_path):
     db.commit()
     db.close()
     store = Store(path)
-    assert store.status()["schema_version"] == SCHEMA_VERSION == 4
+    assert store.status()["schema_version"] == SCHEMA_VERSION
     [record] = store.audit_trail()
     assert (record["assistant"], record["timings"]) == (None, {})
 
