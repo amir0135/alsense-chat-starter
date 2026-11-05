@@ -108,11 +108,13 @@ uv run python scripts/dev.py evals    # only the evaluation cases, with a pass/f
 uv run python scripts/dev.py evals --mode model evals/local   # your own cases against the Foundry model
 uv run python scripts/dev.py latency  # per-stage timings of the requests the local demo recorded
 uv run python scripts/dev.py feedback # answer ratings with their context, never question or answer text
+uv run python scripts/dev.py usage    # requests, errors, latency and model tokens per user (no cost, no quota)
 ```
 
-CI runs the same checks, plus the Docker smoke test, the Dev Container build and secret scans. `latency` and
-`feedback` read the demo database (`--db PATH`, `--limit N`; `feedback` also takes `--rating up|down` and
-`--json`); [`architecture.md`](architecture.md) lists the stages and the feedback context they report.
+CI runs the same checks, plus the Docker smoke test, the Dev Container build and secret scans. `latency`,
+`feedback` and `usage` read the demo database (`--db PATH`; `latency` and `feedback` take `--limit N`,
+`feedback` `--rating up|down`, `usage` `--since DAYS` and `--user ID`, and both `--json`);
+[`architecture.md`](architecture.md) describes what each one reports.
 
 ## Diagnosing startup problems
 

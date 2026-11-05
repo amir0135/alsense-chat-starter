@@ -78,11 +78,15 @@ def valid_record(timings: Any) -> bool:
 
 
 class Stage:
-    """A stage being measured. The caller can name its keys and add a result once the outcome is known."""
+    """A stage being measured. The caller can name its keys and add a result once the outcome is known.
+
+    `metrics` are numbers recorded on the span under their own names, such as gen_ai.usage.input_tokens.
+    """
 
     def __init__(self, keys: tuple[str, ...], attributes: dict[str, str]):
         self.keys = keys
         self.attributes = attributes
+        self.metrics: dict[str, int] = {}
 
 
 @dataclass
@@ -121,6 +125,7 @@ class Timings:
                         "alsense.correlation_id": self.correlation_id,
                         "alsense.stage": name,
                         **{f"alsense.{key}": value for key, value in current.attributes.items()},
+                        **{key: value for key, value in current.metrics.items() if type(value) is int},
                     }
                 )
 

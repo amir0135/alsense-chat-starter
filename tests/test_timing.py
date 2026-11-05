@@ -2,17 +2,12 @@
 
 import json
 import sqlite3
-from types import SimpleNamespace
 
 import pytest
-from helpers import app_client, events, login, reply, submit
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from helpers import app_client, events, foundry, login, reply, submit
 
 import alsense_chat.app
 from alsense_chat import timing
-from alsense_chat.runner import FoundryRunner
 from alsense_chat.store import MIGRATIONS, SCHEMA_VERSION, Store
 
 SITES = "Which sites can I access?"
@@ -23,49 +18,6 @@ SPAN_ATTRIBUTES = {"alsense.correlation_id", "alsense.stage", "alsense.tool", "a
 def trail(tmp_path, *kinds: str) -> list[dict]:
     records = Store(str(tmp_path / "test.sqlite3")).audit_trail()
     return [record for record in records if record["event"] in kinds] if kinds else records
-
-
-class Call:
-    type = "function_call"
-
-    def __init__(self, name: str, arguments: dict):
-        self.name, self.arguments, self.call_id = name, json.dumps(arguments), f"call-{name}"
-
-    def model_dump(self, **_):
-        return {"type": self.type, "name": self.name, "arguments": self.arguments, "call_id": self.call_id}
-
-
-def foundry(monkeypatch, outputs: list) -> dict:
-    """Model mode with a fake Responses API: a (tool, arguments) pair calls a tool, a dict answers."""
-
-    def create(**_):
-        output = outputs.pop(0)
-        if isinstance(output, Exception):
-            raise output
-        if isinstance(output, dict):
-            return SimpleNamespace(status="completed", output=[], output_text=json.dumps(output))
-        return SimpleNamespace(status="completed", output=[Call(*output)])
-
-    def runner(settings):
-        instance = FoundryRunner.__new__(FoundryRunner)
-        instance.deployment = settings.deployment
-        instance.client = SimpleNamespace(responses=SimpleNamespace(create=create), close=lambda: None)
-        instance.project = SimpleNamespace(close=lambda: None)
-        instance.credential = SimpleNamespace(close=lambda: None)
-        return instance
-
-    monkeypatch.setattr(alsense_chat.app, "FoundryRunner", runner)
-    return {"agent_mode": "foundry", "foundry_endpoint": "https://foundry.example.invalid", "deployment": "test"}
-
-
-@pytest.fixture
-def spans(monkeypatch):
-    exporter = InMemorySpanExporter()
-    provider = TracerProvider()
-    provider.add_span_processor(SimpleSpanProcessor(exporter))
-    monkeypatch.setattr(timing, "TRACER", provider.get_tracer("test"))
-    yield exporter
-    provider.shutdown()
 
 
 def test_a_scripted_chat_turn_records_each_stage(tmp_path):

@@ -53,7 +53,7 @@ def test_system_shows_demo_ready_and_flow_versions(tmp_path):
     ]
     assert status["version"] and status["commit"]
     labels = {item["label"]: item for item in status["items"]}
-    assert labels["Session database"]["value"] == "Connected · SQLite schema v5"
+    assert labels["Session database"]["value"] == "Connected · SQLite schema v6"
     assert labels["Assistant"]["value"] == "Scripted demo assistant (no AI model)"
 
 

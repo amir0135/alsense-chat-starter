@@ -415,6 +415,7 @@ class FoundryRunner:
         for _ in range(12):
             # A round whose output calls tools is the model selecting tools; a round without calls answers.
             with ctx.timings.stage("model", "model_failed") as model_round:
+                ctx.usage.call()
                 response = self.create(
                     model=self.deployment,
                     instructions=instructions,
@@ -423,6 +424,11 @@ class FoundryRunner:
                     store=False,
                     max_output_tokens=3000,
                 )
+                # Counted before the status check: an incomplete round can still have used tokens.
+                reported = ctx.usage.add(getattr(response, "usage", None))
+                model_round.metrics |= {
+                    f"gen_ai.usage.{key}": reported[key] for key in ("input_tokens", "output_tokens") if key in reported
+                }
                 if response.status != "completed":
                     raise RuntimeError("Model response incomplete or blocked; no answer released.")
                 calls = [item for item in response.output if item.type == "function_call"]

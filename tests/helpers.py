@@ -1,12 +1,17 @@
 """Shared API helpers for tests and evaluations."""
 
 import json
+from dataclasses import dataclass
 from datetime import date, timedelta
+from types import SimpleNamespace
+from typing import Any
 
 from fastapi.testclient import TestClient
 
+import alsense_chat.app
 from alsense_chat.app import create_app
 from alsense_chat.config import Settings
+from alsense_chat.runner import FoundryRunner
 
 
 def app_client(tmp_path, *faults: str, **overrides) -> TestClient:
@@ -56,3 +61,51 @@ def report_payload(site: str = "site-a", **changes) -> dict:
 
 def submit(client: TestClient, headers: dict, action_id: str):
     return client.post(f"/api/actions/{action_id}/submit", headers=headers, json={"confirmed": True})
+
+
+@dataclass
+class Round:
+    """One fake Responses API call: what it returns, the usage it reports and its status."""
+
+    output: Any
+    usage: Any = None
+    status: str = "completed"
+
+
+class Call:
+    type = "function_call"
+
+    def __init__(self, name: str, arguments: dict):
+        self.name, self.arguments, self.call_id = name, json.dumps(arguments), f"call-{name}"
+
+    def model_dump(self, **_):
+        return {"type": self.type, "name": self.name, "arguments": self.arguments, "call_id": self.call_id}
+
+
+def foundry(monkeypatch, outputs: list) -> dict:
+    """Model mode with a fake Responses API. Returns the settings that select it.
+
+    Each output is a (tool, arguments) pair that calls a tool, a dict that answers, an exception the call raises,
+    or a Round that wraps one of these with the usage it reports and its status.
+    """
+
+    def create(**_):
+        call = outputs.pop(0)
+        call = call if isinstance(call, Round) else Round(call)
+        if isinstance(call.output, Exception):
+            raise call.output
+        if isinstance(call.output, dict):
+            text = json.dumps(call.output)
+            return SimpleNamespace(status=call.status, output=[], output_text=text, usage=call.usage)
+        return SimpleNamespace(status=call.status, output=[Call(*call.output)], usage=call.usage)
+
+    def runner(settings):
+        instance = FoundryRunner.__new__(FoundryRunner)
+        instance.deployment = settings.deployment
+        instance.client = SimpleNamespace(responses=SimpleNamespace(create=create), close=lambda: None)
+        instance.project = SimpleNamespace(close=lambda: None)
+        instance.credential = SimpleNamespace(close=lambda: None)
+        return instance
+
+    monkeypatch.setattr(alsense_chat.app, "FoundryRunner", runner)
+    return {"agent_mode": "foundry", "foundry_endpoint": "https://foundry.example.invalid", "deployment": "test"}

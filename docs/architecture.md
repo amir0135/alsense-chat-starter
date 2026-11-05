@@ -104,6 +104,16 @@ turns, which the review does not read. A rating is accepted once the answer's re
 widget waits for. `uv run python scripts/dev.py feedback` lists the ratings, newest first. Audit records now
 also carry the app version and data source that produced them, and a chat record the answer id of its reply.
 
+Usage is recorded per authenticated user on the same audit records: the event (requests), the error category,
+the total time and, for chat turns and guided-check steps, a numbers-only usage record of the Responses API calls
+made (failed ones included), how many reported token usage and the tokens they reported (input, output, total,
+cached input and reasoning; zero calls for the scripted assistant). Model spans carry `gen_ai.usage.input_tokens`
+and `gen_ai.usage.output_tokens`, and each request's log line carries the user id, error category, model calls
+and token counts as Application Insights custom dimensions. `uv run python scripts/dev.py usage` summarizes
+requests by event, errors by category, latency and tokens per user. Cost is not calculated because the starter
+has no approved price source: cost is tokens times the approved rate for the deployment, from a source the
+owners choose. Nothing limits usage yet; a quota would be enforced at the start of `POST /api/chat`.
+
 SQLite supports one local instance and survives process restarts. The schema is versioned with
 `PRAGMA user_version` and migrated in place at startup. It is not a shared cloud session store. A real
 distributed deployment needs a store with tenant/user ownership, expiry, concurrency control, and idempotent

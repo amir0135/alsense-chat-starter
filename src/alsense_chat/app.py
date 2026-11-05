@@ -152,6 +152,36 @@ def context(request: Request, credentials: Annotated[HTTPAuthorizationCredential
     )
 
 
+def log_request(
+    ctx: Context, event: str, outcome: str, error: str | None, timings: dict, assistant: str = "", **numbers: int
+) -> None:
+    """One line per request. Its extra fields become Application Insights custom dimensions.
+
+    They hold the user id, categories and numbers only, never message text.
+    """
+    total = timings["ms"].get("total", 0.0)
+    log.info(
+        "%s %s persona=%s domains=%s outcome=%s total_ms=%.0f",
+        "chat" if event == "flow" else event,
+        ctx.correlation_id,
+        ctx.user.id,
+        ",".join(ctx.domains),
+        outcome,
+        total,
+        extra={
+            "correlation_id": ctx.correlation_id,
+            "user_id": ctx.user.id,
+            "event": event,
+            **({"assistant": assistant} if assistant else {}),
+            "outcome": outcome,
+            "error_category": error or "",
+            "total_ms": total,
+            "stage_ms": json.dumps(timings["ms"]),
+            **numbers,
+        },
+    )
+
+
 def audit_reply(ctx: Context, reply: dict | None) -> None:
     flow = (reply or {}).get("flow") or {}
     error = (reply or {}).get("error") or {}
@@ -163,7 +193,8 @@ def audit_reply(ctx: Context, reply: dict | None) -> None:
     else:
         outcome, category = status, f"flow:{flow['kind']}" if flow else status
     event = "flow" if flow.get("id") else "chat"
-    timings = ctx.timings.record()
+    error_category = error.get("category") or (None if reply else "runtime_error")
+    timings, usage = ctx.timings.record(), ctx.usage.record()
     ctx.store.audit(
         correlation_id=ctx.correlation_id,
         session_id=ctx.session_id,
@@ -179,29 +210,13 @@ def audit_reply(ctx: Context, reply: dict | None) -> None:
         response_category=f"error:{error['category']}" if error else category,
         confirmation="prepared" if ctx.actions else "none",
         outcome=outcome,
-        error_category=error.get("category") or (None if reply else "runtime_error"),
+        error_category=error_category,
         assistant=ctx.assistant,
         timings=timings,
         answer_id=(reply or {}).get("answer_id"),
+        usage=usage,
     )
-    total = timings["ms"].get("total", 0.0)
-    log.info(
-        "chat %s persona=%s domains=%s outcome=%s total_ms=%.0f",
-        ctx.correlation_id,
-        ctx.user.id,
-        ",".join(ctx.domains),
-        outcome,
-        total,
-        # Custom dimensions in Application Insights: ids, categories and numbers only.
-        extra={
-            "correlation_id": ctx.correlation_id,
-            "event": event,
-            "assistant": ctx.assistant,
-            "outcome": outcome,
-            "total_ms": total,
-            "stage_ms": json.dumps(timings["ms"]),
-        },
-    )
+    log_request(ctx, event, outcome, error_category, timings, ctx.assistant, **usage)
 
 
 def create_app(settings: Settings | None = None, services: Services | None = None) -> FastAPI:
@@ -453,6 +468,7 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
             raise HTTPException(403, "Action is no longer permitted.") from None
         finally:
             ctx.timings.mark("total")
+            timings = ctx.timings.record()
             ctx.store.audit(
                 correlation_id=ctx.correlation_id,
                 session_id=ctx.session_id,
@@ -463,14 +479,17 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
                 confirmation="confirmed",
                 outcome=outcome,
                 error_category=error,
-                timings=ctx.timings.record(),
+                timings=timings,
             )
+            log_request(ctx, "submit", outcome, error, timings)
 
     @app.get("/api/actions/{action_id}/status")
     def action_status(action_id: str, ctx: Annotated[Context, Depends(context)]):
         """A confirmed report's job state and download link, so the widget can show the link right away."""
         output = ctx.execute("get_report_status", {"action_id": action_id}, caller="user")
         ctx.timings.mark("total")
+        timings = ctx.timings.record()
+        outcome = ctx.calls[-1]["result"] if ctx.calls else None
         ctx.store.audit(
             correlation_id=ctx.correlation_id,
             session_id=ctx.session_id,
@@ -478,10 +497,11 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
             scenario=ctx.scenario or None,
             event="status",
             tools=[{"tool": call["tool"], "result": call["result"]} for call in ctx.calls],
-            outcome=ctx.calls[-1]["result"] if ctx.calls else None,
+            outcome=outcome,
             error_category=output.get("category"),
-            timings=ctx.timings.record(),
+            timings=timings,
         )
+        log_request(ctx, "status", outcome or "", output.get("category"), timings)
         if "error" not in output:
             return output["data"]
         status = {"not_found": 404, "forbidden": 403, "disabled": 403, "invalid_input": 400}.get(
@@ -559,21 +579,7 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
                 error_category=error or None,
                 timings=timings,
             )
-            total = timings["ms"].get("total", 0.0)
-            log.info(
-                "feedback %s persona=%s outcome=%s total_ms=%.0f",
-                ctx.correlation_id,
-                ctx.user.id,
-                outcome,
-                total,
-                extra={
-                    "correlation_id": ctx.correlation_id,
-                    "event": "feedback",
-                    "outcome": outcome,
-                    "total_ms": total,
-                    "stage_ms": json.dumps(timings["ms"]),
-                },
-            )
+            log_request(ctx, "feedback", outcome, error or None, timings)
 
     @app.get("/reference/{path:path}")
     def reference(path: str):

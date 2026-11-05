@@ -11,6 +11,7 @@ from typing import Any
 
 from .adapters.contracts import User
 from .timing import valid_record
+from .usage import valid_usage
 
 # Append-only. Databases created before versioning report user_version 0 and already have migration 1's tables.
 MIGRATIONS = (
@@ -80,6 +81,9 @@ MIGRATIONS = (
         updated REAL NOT NULL
     )
     """,
+    """
+    ALTER TABLE audit ADD COLUMN usage TEXT NOT NULL DEFAULT '{}'
+    """,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 AUDIT_FIELDS = (
@@ -103,6 +107,7 @@ AUDIT_FIELDS = (
     "answer_id",
     "app_version",
     "data_source",
+    "usage",
 )
 # Written with every audit record unless the caller sets them.
 STAMP_FIELDS = ("app_version", "data_source")
@@ -276,6 +281,10 @@ class Store:
         if not valid_record(timings):
             raise ValueError("Timings hold milliseconds and run counts for known stages only.")
         values["timings"] = json.dumps(timings, allow_nan=False)
+        usage = values["usage"] or {}
+        if not valid_usage(usage):
+            raise ValueError("Usage holds whole-number model calls and token counts only.")
+        values["usage"] = json.dumps(usage)
         try:
             with self.connection() as db:
                 db.execute(
@@ -316,7 +325,7 @@ class Store:
     @staticmethod
     def decode_audit(row: sqlite3.Row) -> dict:
         record = dict(row)
-        for name in ("tools", "inputs", "domains", "offered_tools", "timings"):
+        for name in ("tools", "inputs", "domains", "offered_tools", "timings", "usage"):
             record[name] = json.loads(record[name])
         return record
 

@@ -234,7 +234,7 @@ def test_a_v4_database_migrates_and_keeps_its_turns(tmp_path):
     db.commit()
     db.close()
     migrated = Store(path)
-    assert migrated.status()["schema_version"] == SCHEMA_VERSION == 5
+    assert migrated.status()["schema_version"] == SCHEMA_VERSION
     with migrated.connection() as connection:
         assert tuple(connection.execute("SELECT answer_id, correlation_id FROM turns").fetchone()) == (None, None)
         assert connection.execute("SELECT COUNT(*) FROM feedback").fetchone()[0] == 0
