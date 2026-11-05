@@ -46,11 +46,11 @@ Choose a synthetic user in the **Demo session** panel and press **Start demo ses
 
 ## Running a scripted demo
 
-Open **Demo scenarios** in the rail (or "Run a demo scenario" on the welcome view). Each scenario shows what it
-demonstrates, the starting user and the expected result. **Start scenario** signs in as the right user with any
-synthetic faults it needs; the coach above the composer then shows each step's talking point and a **Run step**
-button. **Reset scenario** starts it again from a clean conversation. Scenarios live in
-`src/alsense_chat/scenarios.yaml`.
+Open **Demo scenarios** in the rail (or "Run a demo scenario" on the welcome view). Both appear only with
+synthetic data, when at least one scenario can run. Each scenario shows what it demonstrates, the starting user
+and the expected result. **Start scenario** signs in as the right user with any synthetic faults it needs; the
+coach above the composer then shows each step's talking point and a **Run step** button. **Reset scenario**
+starts it again from a clean conversation. Scenarios live in `src/alsense_chat/scenarios.yaml`.
 
 ## Resetting the demo
 

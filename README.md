@@ -148,9 +148,10 @@ My sensor is offline. What should I check?
 
 ## 6. Synthetic demo scenarios
 
-Open **Demo scenarios** in the app. Each scenario lists what it demonstrates, the starting user and the expected
-result; **Start scenario** signs in as that user (with any synthetic faults it needs) and a coach walks through
-the steps. **Reset scenario** starts again from a clean conversation.
+Open **Demo scenarios** in the app (shown with synthetic data when at least one scenario can run). Each scenario
+lists what it demonstrates, the starting user and the expected result; **Start scenario** signs in as that user
+(with any synthetic faults it needs) and a coach walks through the steps. **Reset scenario** starts again from a
+clean conversation.
 
 | Scenario | Shows |
 |---|---|

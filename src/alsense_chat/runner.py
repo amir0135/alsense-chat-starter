@@ -202,6 +202,12 @@ EMPTY = {
     "search_docs": "No approved guidance matches this issue. You can prepare a support request.",
     "get_permitted_sites": "You don't have access to any sites in this demo.",
 }
+# The same wording without "synthetic" or "demo", for data that doesn't come from the synthetic services.
+LIVE_REPORT_STATES = {
+    **REPORT_STATES,
+    "completed": "Your report is ready. Download it with the link below before the link expires.",
+}
+LIVE_EMPTY = {**EMPTY, "get_permitted_sites": "You don't have access to any sites."}
 
 
 def demo_text(name: str, data, ctx: Context) -> str:
@@ -230,7 +236,7 @@ def demo_text(name: str, data, ctx: Context) -> str:
             next_run = (data.get("result") or {}).get("next_run")
             first = f" The first report goes out on {_day(next_run)}." if next_run else ""
             return "Your schedule is confirmed." + first
-        return REPORT_STATES[data["state"]]
+        return (REPORT_STATES if ctx.services.kind == "synthetic" else LIVE_REPORT_STATES)[data["state"]]
     return "Here is the latest status."
 
 
@@ -370,7 +376,8 @@ def demo_run(message: str, ctx: Context) -> Iterator[tuple[str, dict]]:
         return
     data = output["data"]
     if not data or (name == "get_permitted_sites" and not data["sites"]):
-        text = EMPTY.get(name, "The permitted data does not answer that lookup. You can prepare a support ticket.")
+        empty = EMPTY if ctx.services.kind == "synthetic" else LIVE_EMPTY
+        text = empty.get(name, "The permitted data does not answer that lookup. You can prepare a support ticket.")
         reply = Reply(status="not_in_data", text=text, source_ids=[])
     else:
         reply = Reply(status="answer", text=demo_text(name, data, ctx), source_ids=[output["source_id"]])

@@ -49,7 +49,7 @@
           <span class="action-symbol" aria-hidden="true">↗</span>
           <span>Contact support</span>
         </button>
-        <button class="rail-action" type="button" id="open-scenarios">
+        <button class="rail-action" type="button" id="open-scenarios" hidden>
           <span class="action-symbol" aria-hidden="true">▶</span>
           <span>Demo scenarios</span>
         </button>
@@ -81,7 +81,7 @@
         <p id="identity" class="identity-summary" hidden></p>
       </section>
 
-      <p class="synthetic-note"><span aria-hidden="true">●</span><span>Synthetic data only · No live Alsense calls · <a href="/system">System status</a></span></p>
+      <p class="synthetic-note"><span aria-hidden="true">●</span><span><span id="data-note">Synthetic data only · No live Alsense calls</span> · <a href="/system">System status</a></span></p>
     </aside>
 
     <main class="main-panel">
@@ -100,7 +100,7 @@
         <div id="welcome" class="welcome">
           <div class="welcome-mark" aria-hidden="true">A</div>
           <h1>How can I help with your operations?</h1>
-          <p>Ask a question in your own words. I’ll use synthetic site data and show the sources behind my answer.</p>
+          <p id="welcome-intro">Ask a question in your own words. I’ll use synthetic site data and show the sources behind my answer.</p>
           <div class="suggestions" aria-label="Try asking">
             <button type="button" class="suggestion" data-message="Which sites can I access?" disabled>
               <span class="suggestion-icon" aria-hidden="true">⌖</span>
@@ -124,7 +124,7 @@
             </button>
           </div>
           <p id="welcome-hint" class="welcome-hint">Start a synthetic session in the left panel to begin.</p>
-          <p class="welcome-hint">Presenting? <button id="welcome-scenarios" class="link-button" type="button">Run a demo scenario</button> with the right user and expected result.</p>
+          <p id="welcome-presenting" class="welcome-hint" hidden>Presenting? <button id="welcome-scenarios" class="link-button" type="button">Run a demo scenario</button> with the right user and expected result.</p>
         </div>
         <section id="scenario-gallery" class="scenario-gallery" aria-labelledby="scenario-gallery-title" hidden>
           <div class="gallery-heading">
@@ -236,7 +236,7 @@
             </div>
             <div id="ticket-fields" class="draft-grid" hidden>
               <label>Alarm ID (optional)<input name="alarm_id" maxlength="100" placeholder="For example, alarm-site-a"></label>
-              <p class="field-help grid-span">Synthetic example: alarm-site-a for Demo North or alarm-site-b for Demo South.</p>
+              <p id="alarm-example" class="field-help grid-span">Synthetic example: alarm-site-a for Demo North or alarm-site-b for Demo South.</p>
               <label class="grid-span">What happened?<textarea name="summary" maxlength="500" required></textarea></label>
               <label class="grid-span">What have you tried?<textarea name="steps_tried" maxlength="2000" required></textarea></label>
             </div>
@@ -271,7 +271,7 @@
           <button id="send" class="send-button" type="submit" aria-label="Send message" disabled><span aria-hidden="true">↑</span></button>
         </form>
         <div class="composer-footer">
-          <p>AI can make mistakes. Check the cited synthetic sources.</p>
+          <p id="sources-note">AI can make mistakes. Check the cited synthetic sources.</p>
           <p>Enter to send · Shift + Enter for a new line</p>
         </div>
         <p id="error" class="error-message" role="alert" hidden></p>

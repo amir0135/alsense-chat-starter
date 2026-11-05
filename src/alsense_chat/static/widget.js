@@ -16,6 +16,11 @@ let scenarios = [];
 let scenariosState = "loading";
 let activeScenario = null;
 let sessionScenario = "";
+/* Whether the backend's data is synthetic (/api/health). Results say "synthetic" only when it is. */
+let syntheticData = true;
+let dataSourceKnown = false;
+let reportTypesRequest = null;
+const reportTypeNames = new Map();
 const siteAlarms = new Map();
 const actionCards = new WeakMap();
 const replyChoices = new WeakMap();
@@ -28,6 +33,8 @@ const STATUS_LABELS = {
   out_of_scope: "Outside this demo",
   error: "Couldn’t complete",
 };
+/* The same labels for data that isn't synthetic. */
+const LIVE_STATUS_LABELS = { not_in_data: "Not in the available data", out_of_scope: "Out of scope" };
 /* Failures worth handing to a person: a support request can carry what was tried. */
 const SUPPORT_CATEGORIES = new Set(["unavailable", "timeout", "stale", "not_found"]);
 const REPORT_STATES = {
@@ -37,6 +44,7 @@ const REPORT_STATES = {
   failed: "Failed",
   scheduled: "Scheduled (synthetic)",
 };
+const LIVE_REPORT_STATES = { completed: "Ready", scheduled: "Scheduled" };
 const TOOL_PROGRESS = {
   get_permitted_sites: "Checking the sites you can access…",
   search_docs: "Looking through the operations guidance…",
@@ -65,6 +73,23 @@ const ACTION_COPY = {
     final: "Synthetic request received", link: "Open synthetic record", progress: "Support request progress",
     pending: "Nothing has been sent. Confirm below to submit this synthetic demo action.",
     done: "Submitted · synthetic", sent: "Submitted to the synthetic demo. No real support request was sent.",
+  },
+};
+const LIVE_ACTION_COPY = {
+  report: {
+    confirm: "Confirm report", retry: "Retry report", final: "Report ready", link: "Open report",
+    pending: "Nothing has been sent. Confirm below to create this report.",
+    done: "Submitted", sent: "Submitted to the report service.",
+  },
+  scheduled_report: {
+    confirm: "Confirm schedule", retry: "Retry schedule", link: "Open schedule",
+    pending: "Nothing is scheduled yet. Confirm below to create this schedule.",
+    done: "Scheduled", sent: "Scheduled with the report service.",
+  },
+  ticket: {
+    confirm: "Confirm request", retry: "Retry request", final: "Request received", link: "Open request",
+    pending: "Nothing has been sent. Confirm below to submit this request.",
+    done: "Submitted", sent: "Submitted to the support service.",
   },
 };
 const ACTION_STATES = {
@@ -161,10 +186,43 @@ function siteName(siteId) {
   return user?.sites?.find((site) => site.id === siteId)?.name || "";
 }
 
+function statusLabel(status, synthetic) {
+  return (!synthetic && LIVE_STATUS_LABELS[status]) || STATUS_LABELS[status] || "Answer";
+}
+
+function reportStateLabel(state, synthetic) {
+  return (!synthetic && LIVE_REPORT_STATES[state]) || REPORT_STATES[state] || "unavailable";
+}
+
+function actionCopy(kind, synthetic) {
+  return synthetic ? ACTION_COPY[kind] : { ...ACTION_COPY[kind], ...LIVE_ACTION_COPY[kind] };
+}
+
+/* Report type names come from the user's report catalog, or from a catalog lookup shown in a reply. */
+function rememberReportTypes(items) {
+  for (const item of Array.isArray(items) ? items : []) {
+    if (item?.id && item?.label) reportTypeNames.set(item.id, item.label);
+  }
+}
+
+/* One catalog request per session: a request from an earlier session doesn't fill in this one's catalog. */
+function loadReportTypes() {
+  if (reportTypesRequest) return reportTypesRequest;
+  const request = api("/api/report-types").then((response) => response.json()).then((items) => {
+    if (request !== reportTypesRequest) return reportTypes || [];
+    reportTypes = Array.isArray(items) ? items : [];
+    rememberReportTypes(reportTypes);
+    return reportTypes;
+  });
+  reportTypesRequest = request;
+  request.catch(() => {
+    if (request === reportTypesRequest) reportTypesRequest = null;
+  });
+  return request;
+}
+
 function reportTypeLabel(typeId) {
-  return reportTypes?.find((item) => item.id === typeId)?.label
-    || ({ "temperature-log": "Temperature log", "alarm-history": "Alarm history", "site-status": "Site status" })[typeId]
-    || "Report";
+  return reportTypes?.find((item) => item.id === typeId)?.label || reportTypeNames.get(typeId) || "Report";
 }
 
 function formatLabel(format) {
@@ -368,7 +426,7 @@ function renderDocuments(data, parent) {
 }
 
 /* The confirmed result: a download link with its expiry, a schedule's first run, or why there is none. */
-function renderReportResult(container, status, { live = false } = {}) {
+function renderReportResult(container, status, { live = false, synthetic = true } = {}) {
   container.querySelector(".report-result")?.remove();
   const box = node("div", "report-result");
   const result = status?.result || {};
@@ -378,7 +436,7 @@ function renderReportResult(container, status, { live = false } = {}) {
       const link = node("a", "download-link");
       const glyph = node("span", "download-glyph", "↓");
       glyph.setAttribute("aria-hidden", "true");
-      link.append(glyph, document.createTextNode("Download synthetic report"));
+      link.append(glyph, document.createTextNode(synthetic ? "Download synthetic report" : "Download report"));
       link.href = result.url;
       link.target = "_blank";
       link.rel = "noopener noreferrer";
@@ -397,19 +455,19 @@ function renderReportResult(container, status, { live = false } = {}) {
   } else if (status?.state === "scheduled") {
     const first = dayLabel(result.next_run);
     box.append(node("p", "download-note", first ? `First report on ${first}.` : "The schedule is active."));
-    if (approvedLink(result.url)) addLink(box, "Open synthetic schedule", result.url);
+    if (approvedLink(result.url)) addLink(box, synthetic ? "Open synthetic schedule" : "Open schedule", result.url);
   } else {
     return;
   }
   container.append(box);
 }
 
-function renderStatus(data, parent) {
+function renderStatus(data, parent, synthetic) {
   const state = typeof data?.state === "string" ? data.state : "";
   const subject = data?.kind === "scheduled_report" ? "Schedule" : "Report";
-  parent.append(node("p", "source-excerpt", `${subject} status: ${REPORT_STATES[state] || "unavailable"}.`));
+  parent.append(node("p", "source-excerpt", `${subject} status: ${reportStateLabel(state, synthetic)}.`));
   if (typeof data?.result?.message === "string") parent.append(node("p", "source-excerpt", data.result.message));
-  renderReportResult(parent, data);
+  renderReportResult(parent, data, { synthetic });
 }
 
 async function reportStatus(actionId) {
@@ -417,11 +475,11 @@ async function reportStatus(actionId) {
 }
 
 /* Shows the result as soon as the service has it; a job still running is checked again a few times. */
-async function followReport(actionId, container) {
+async function followReport(actionId, container, synthetic = true) {
   for (let attempt = 0; attempt < STATUS_POLLS; attempt += 1) {
     const status = await reportStatus(actionId);
     const last = attempt === STATUS_POLLS - 1;
-    renderReportResult(container, status, { live: status.state === "processing" && !last });
+    renderReportResult(container, status, { live: status.state === "processing" && !last, synthetic });
     if (status.state !== "processing" || !container.isConnected) return status;
     if (!last) await new Promise((resolve) => setTimeout(resolve, STATUS_POLL_MS));
   }
@@ -460,7 +518,7 @@ function renderEvidence(reply, parent) {
         renderDocuments(source.data, content);
         break;
       case "get_report_status":
-        renderStatus(source.data, content);
+        renderStatus(source.data, content, reply.synthetic !== false);
         break;
       case "check_site_health":
         renderHealth(source.data, content);
@@ -599,9 +657,9 @@ function actionRows(kind, payload) {
   return [["Site", site], ["Alarm", payload.alarm_id], ["Summary", payload.summary], ["Steps tried", payload.steps_tried]];
 }
 
-function renderAction(action, parent) {
+function renderAction(action, parent, synthetic = true) {
   const kind = ACTION_COPY[action.kind] ? action.kind : "ticket";
-  const copy = ACTION_COPY[kind];
+  const copy = actionCopy(kind, synthetic);
   const reporting = kind !== "ticket";
   const payload = action.payload || {};
   const card = node("section", "action-card");
@@ -629,7 +687,13 @@ function renderAction(action, parent) {
 
   const details = node("dl", "action-details");
   for (const [label, value] of actionRows(kind, payload)) {
-    if (value) details.append(node("dt", "", label), node("dd", "", value));
+    if (!value) continue;
+    const cell = node("dd", "", value);
+    details.append(node("dt", "", label), cell);
+    /* A draft prepared in chat can name a report type the catalog hasn't been loaded for yet. */
+    if (reporting && label === "Report" && !reportTypes && !reportTypeNames.has(payload.report_type)) {
+      loadReportTypes().then(() => { cell.textContent = reportTypeLabel(payload.report_type); }).catch(() => {});
+    }
   }
 
   const buttons = node("div", "action-buttons");
@@ -660,7 +724,7 @@ function renderAction(action, parent) {
     kind === "scheduled_report" ? "Check the status of this schedule" : "Check the status of this report");
   const result = node("div", "card-result");
 
-  /* Returns whether the synthetic submission succeeded; failures stay visible on the card. */
+  /* Returns whether the submission succeeded; failures stay visible on the card. */
   const confirmAction = async () => {
     if (card.dataset.state !== "prepared" && card.dataset.state !== "failed") return false;
     setState("submitting");
@@ -691,10 +755,10 @@ function renderAction(action, parent) {
         status.addEventListener("click", () => checkStatus().catch((error) => showError(error.message)));
         buttons.append(status);
         if (kind === "scheduled_report") {
-          renderReportResult(result, { state: "scheduled", result: submission });
+          renderReportResult(result, { state: "scheduled", result: submission }, { synthetic });
         } else {
           /* The link is the point of the report: fetch it right away instead of waiting for "Check status". */
-          followReport(action.id, result).catch((error) => {
+          followReport(action.id, result, synthetic).catch((error) => {
             result.replaceChildren(node("p", "download-note is-failed",
               `${error.message} Use Check status to try again.`));
           });
@@ -714,7 +778,7 @@ function renderAction(action, parent) {
     }
   };
   const editAction = async () => {
-    await openDraft(kind, payload);
+    if (!(await openDraft(kind, payload))) return false;
     replacingCard = card;
     return true;
   };
@@ -878,7 +942,8 @@ function renderReply(reply) {
   const body = node("div", "assistant-body");
   const heading = node("div", "answer-heading");
   heading.append(node("strong", "", "Operations assistant"));
-  heading.append(node("span", `answer-status ${reply.status || "answer"}`, STATUS_LABELS[reply.status] || "Answer"));
+  const synthetic = reply.synthetic !== false;
+  heading.append(node("span", `answer-status ${reply.status || "answer"}`, statusLabel(reply.status, synthetic)));
   body.append(heading);
   if (flow && flow.kind !== "menu") body.append(flowMeta(flow));
   textParagraphs(body, reply.text, "answer-text");
@@ -887,8 +952,11 @@ function renderReply(reply) {
     renderEvidence({ ...reply, sources: (reply.sources || []).filter((source) => cited.has(source.source_id)) }, body);
     renderFlow(flow, body);
   } else {
+    for (const source of reply.sources || []) {
+      if (source?.tool === "list_report_types") rememberReportTypes(source.data);
+    }
     renderEvidence(reply, body);
-    for (const action of reply.actions || []) renderAction(action, body);
+    for (const action of reply.actions || []) renderAction(action, body, synthetic);
     renderChoices(reply, body);
     renderBuilderPrompt(reply, body);
     renderFollowUps(reply, body);
@@ -1054,7 +1122,11 @@ function chatTiming() {
 
 async function send(message, displayText = message) {
   const questionText = message.trim();
-  if (!token) throw new Error("Start a synthetic demo session before asking a question.");
+  if (!token) {
+    throw new Error(syntheticData
+      ? "Start a synthetic demo session before asking a question."
+      : "Start a session in the left panel before asking a question.");
+  }
   if (busy) throw new Error("Wait for the current answer to finish.");
   if (!questionText) return;
   if (!/^\/flows?(\s|$)/.test(questionText)) setActiveFlow(null);
@@ -1162,7 +1234,31 @@ function updateSessionUI() {
   renderCoach();
   $("welcome-hint").textContent = active
     ? `Signed in as ${user.name}. Your questions stay scoped to ${user.sites.map((site) => site.name).join(", ")}.`
-    : "Start a synthetic session in the left panel to begin.";
+    : syntheticData ? "Start a synthetic session in the left panel to begin." : "Start a session in the left panel to begin.";
+}
+
+/* The page says "synthetic" until the backend reports another data source. */
+function applyDataSource(source) {
+  syntheticData = !source || source === "synthetic";
+  dataSourceKnown = true;
+  if (!syntheticData) {
+    $("data-note").textContent = "Data from the configured Alsense APIs";
+    $("welcome-intro").textContent =
+      "Ask a question in your own words. I’ll use your site data and show the sources behind my answer.";
+    $("sources-note").textContent = "AI can make mistakes. Check the cited sources.";
+    $("alarm-example").hidden = true;
+    $("draft-form").elements.alarm_id.placeholder = "";
+  }
+  updatePresenterTools();
+  updateSessionUI();
+}
+
+/* Scenarios are presenter tooling for the synthetic data: offer them only when one of them can run. */
+function updatePresenterTools() {
+  const offered = dataSourceKnown && syntheticData
+    && Array.isArray(scenarios) && scenarios.some((scenario) => !scenario.unavailable_reason);
+  $("open-scenarios").hidden = !offered;
+  $("welcome-presenting").hidden = !offered;
 }
 
 /* A fresh session always starts from a clean conversation. */
@@ -1171,6 +1267,8 @@ function applySession(session) {
   user = session.user;
   sessionScenario = session.scenario || "";
   reportTypes = null;
+  reportTypesRequest = null;
+  reportTypeNames.clear();
   replacingCard = null;
   lastFlowResult = null;
   siteAlarms.clear();
@@ -1215,6 +1313,8 @@ function switchUser() {
   sessionScenario = "";
   lastFlowResult = null;
   reportTypes = null;
+  reportTypesRequest = null;
+  reportTypeNames.clear();
   replacingCard = null;
   siteAlarms.clear();
   $("messages").replaceChildren();
@@ -1278,7 +1378,10 @@ function renderReportChoices(selectedId) {
     copy.append(node("strong", "", report.label || "Report"));
     const formats = Array.isArray(report.formats) ? report.formats.map(formatLabel).join(", ") : "";
     const note = node("small");
-    if (REPORT_NOTES[report.id]) note.append(document.createTextNode(`${REPORT_NOTES[report.id]}${formats ? " · " : ""}`));
+    /* These notes describe the synthetic report types. */
+    if (syntheticData && REPORT_NOTES[report.id]) {
+      note.append(document.createTextNode(`${REPORT_NOTES[report.id]}${formats ? " · " : ""}`));
+    }
     if (formats) note.append(node("span", "nowrap", formats));
     if (!report.schedule) note.append(node("span", "schedule-note", " · On demand only"));
     if (note.childNodes.length) copy.append(note);
@@ -1466,7 +1569,7 @@ function updateReportBuilder({ animate = false } = {}) {
     else input.removeAttribute("aria-invalid");
   }
   const parts = [reportTypeLabel(payload.report_type), siteName(payload.site_id)];
-  parts.push(...(problem ? ["Check the period"] : [formatPeriod(payload.start, payload.end), payload.format.toUpperCase()]));
+  parts.push(...(problem ? ["Check the period"] : [formatPeriod(payload.start, payload.end), formatLabel(payload.format)]));
   setSummary(parts.filter(Boolean).join(" · "), animate);
   $("prepare-draft").disabled = Boolean(problem) || !payload.report_type || !payload.format;
 }
@@ -1477,13 +1580,19 @@ function closeDraft() {
   if (!$("message").disabled) $("message").focus();
 }
 
+/* Returns whether the builder opened. */
 async function openDraft(requested, prefill = null, { fromFlow = false, fresh = false, focus = "" } = {}) {
-  if (!user) throw new Error("Start a synthetic demo session first.");
+  if (!user) throw new Error(syntheticData ? "Start a synthetic demo session first." : "Start a session first.");
   if (busy) throw new Error("Wait for the current answer to finish.");
   clearError();
   const scheduled = requested === "scheduled_report" || prefill?.mode === "scheduled";
   const kind = requested === "ticket" ? "ticket" : "report";
-  if (kind === "report" && !reportTypes) reportTypes = await (await api("/api/report-types")).json();
+  if (kind === "report" && !reportTypes) {
+    const session = token;
+    await loadReportTypes();
+    /* A session started while the catalog loaded begins with a clean conversation, so the builder stays closed. */
+    if (token !== session) return false;
+  }
   draftKind = kind;
   replacingCard = null;
   const panel = $("draft-panel");
@@ -1540,7 +1649,8 @@ async function openDraft(requested, prefill = null, { fromFlow = false, fresh = 
     $("draft-description").textContent = fromFlow
       ? "Filled in from your guided check. Review it before preparing."
       : "Describe the issue and what you’ve already tried.";
-    form.elements.alarm_id.value = prefill ? prefill.alarm_id || "" : `alarm-${form.elements.site_id.value}`;
+    form.elements.alarm_id.value = prefill ? prefill.alarm_id || ""
+      : syntheticData ? `alarm-${form.elements.site_id.value}` : "";
     form.elements.summary.value = prefill?.summary || "";
     form.elements.steps_tried.value = prefill?.steps_tried || "";
     $("draft-summary-icon").textContent = "↗";
@@ -1553,6 +1663,7 @@ async function openDraft(requested, prefill = null, { fromFlow = false, fresh = 
       : kind === "report" ? form.querySelector('input[name="report_type"]:checked') : form.elements.summary;
   focusTarget?.focus();
   scrollToLatest();
+  return true;
 }
 
 $("open-scenarios").addEventListener("click", () => openScenarios());
@@ -1628,7 +1739,7 @@ $("draft-form").addEventListener("change", (event) => {
   const { name, value } = event.target;
   const form = $("draft-form");
   if (name === "site_id" && draftKind === "ticket") {
-    if (form.elements.alarm_id.value) form.elements.alarm_id.value = `alarm-${value}`;
+    if (syntheticData && form.elements.alarm_id.value) form.elements.alarm_id.value = `alarm-${value}`;
     setSummary(`Support request for ${siteName(value)}`, true);
   }
   if (draftKind !== "report") return;
@@ -1714,6 +1825,7 @@ async function loadScenarios() {
     if (!response.ok) throw new Error("unavailable");
     scenarios = await response.json();
     scenariosState = "ready";
+    updatePresenterTools();
   } catch {
     scenariosState = "error";
     throw new Error("Demo scenarios couldn’t be loaded. Check that the demo service is running, then try again.");
@@ -1852,7 +1964,10 @@ function applyDraftChanges(changes) {
     if (!input) throw new Error("The report builder doesn’t offer that choice.");
     input.checked = true;
     if (name === "period") applyPeriod(value);
-    if (name === "report_type") syncFormats();
+    if (name === "report_type") {
+      syncFormats();
+      syncSchedule();
+    }
   }
   updateReportBuilder({ animate: true });
 }
@@ -1949,7 +2064,7 @@ fetch("/api/health")
     $("access-code-field").hidden = !cloudMode;
     $("model-state").textContent = health.mode === "foundry" ? "AI assistant ready" : "Demo assistant ready";
     if (!cloudMode) $("code-help").textContent = "Local demo session · no access code needed.";
-    updateSessionUI();
+    applyDataSource(health.data_source);
   })
   .catch(() => {
     $("model-state").textContent = "Service unavailable";

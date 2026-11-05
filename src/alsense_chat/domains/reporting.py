@@ -39,6 +39,10 @@ class OnDemandReport(Arguments):
     def window(self):
         if self.start > self.end:
             raise ValueError("The start date must be on or before the end date.")
+        # The widget checks against the browser's date and this against the server's, which can be a day apart
+        # across time zones: one day of tolerance keeps a period that ends today valid in both.
+        if self.end > date.today() + timedelta(days=1):
+            raise ValueError("The period can't end after today.")
         if (self.end - self.start).days > MAX_WINDOW_DAYS:
             raise ValueError("The report period is too long. Choose a period of one year or less.")
         return self
