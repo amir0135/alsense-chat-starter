@@ -78,7 +78,9 @@ without secrets, which capabilities are synthetic, configured, disabled or futur
 Chat turns, guided checks, confirmations and status reads also record their timings in the audit record, as
 milliseconds and run counts per stage (`src/alsense_chat/timing.py`): the session lookup; routing, which is the
 scripted assistant's tool selection and, in model mode, also builds the routed tool set; the model history; model
-rounds that select tools (`model_tool_selection`) apart from the round that answers (`model_answer`); each tool
+rounds that select tools (`model_tool_selection`) apart from the round that answers (`model_answer`), failed
+model calls (`model_failed`) and the waits before retrying them (`model_throttled` after a 429, `model_retry`
+otherwise; the runner applies the OpenAI SDK's retry policy itself and logs each retry as a warning); each tool
 call including its service (`tool.<name>`, summed as `tools`); the reply checks (`guard`); storing the turn; and
 the offsets of the first streamed event, the reply and the end of the request. With Application Insights
 configured, each stage is also a span whose attributes are only the correlation id, stage, tool, result category

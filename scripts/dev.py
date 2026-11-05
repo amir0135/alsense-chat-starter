@@ -15,6 +15,7 @@ Tasks:
     latency         Summarize the recorded request timings per stage (p50, p95, max). Add --db PATH, --limit N
     feedback        Review answer ratings, without question or answer text. Add --rating up|down, --limit N, --json
     usage           Requests, errors, latency and model tokens per user. Add --since DAYS, --user ID, --json
+    measure         Run the proxy flows in-process, then print the latency and usage reports. Add --runs N, --db PATH
     fixtures        Regenerate the contract fixtures and JSON Schemas in fixtures/
     export          Write a history-free zip of the starter to dist/
 
@@ -211,6 +212,12 @@ def usage(_: argparse.Namespace, extra: list[str]) -> int:
     return run(*uv_run(*env_file, "python", "-m", "alsense_chat.usage", *extra))
 
 
+def measure(_: argparse.Namespace, extra: list[str]) -> int:
+    # AGENT_MODE and the Foundry settings come from .env: model mode makes real, billed model calls.
+    env_file = ["--env-file", ".env"] if (ROOT / ".env").is_file() else []
+    return run(*uv_run(*env_file, "python", "-m", "alsense_chat.measure", *extra))
+
+
 def fixtures(_: argparse.Namespace, extra: list[str]) -> int:
     return run(*uv_run("python", "scripts/fixtures.py"))
 
@@ -244,6 +251,7 @@ def main(argv: list[str]) -> int:
     tasks.add_parser("latency", help="per-stage request timings of the local demo").set_defaults(run=latency)
     tasks.add_parser("feedback", help="review answer ratings (no question or answer text)").set_defaults(run=feedback)
     tasks.add_parser("usage", help="requests, errors, latency and tokens per user").set_defaults(run=usage)
+    tasks.add_parser("measure", help="measured run of the proxy flows with reports").set_defaults(run=measure)
     tasks.add_parser("fixtures", help="regenerate contract fixtures").set_defaults(run=fixtures)
     tasks.add_parser("export", help="history-free zip in dist/").set_defaults(run=export)
     args, extra = parser.parse_known_args(argv)

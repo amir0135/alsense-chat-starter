@@ -1,10 +1,16 @@
+import email.utils
 import json
 import logging
+import math
 import re
-from collections.abc import Iterator
+import time
+from collections.abc import Iterator, Mapping
 from datetime import date
+from random import random
+from time import sleep
 from typing import Any, Literal, cast
 
+from openai import APIConnectionError, APIStatusError, APITimeoutError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .adapters.errors import IntegrationError, ModelUnavailable
@@ -17,6 +23,12 @@ from .flows import FlowError, match_trigger, menu_reply, run_flow
 from .tools import FEATURE_OFF, Context, evidence_text, internal_identifiers, tool_definitions
 
 log = logging.getLogger(__name__)
+# The OpenAI SDK's default retry policy. The SDK's own retries are switched off and FoundryRunner.create applies the
+# same policy itself, so the time spent waiting is measured apart from the model's own time.
+MAX_RETRIES = 2
+MAX_RETRY_AFTER = 120.0
+INITIAL_RETRY_DELAY = 0.5
+MAX_RETRY_DELAY = 8.0
 
 MODEL_STATUSES = ("answer", "clarification", "not_in_data", "out_of_scope")
 CHECKED = "Passed: sources, numbers, links and wording verified"
@@ -372,7 +384,8 @@ class FoundryRunner:
 
         self.credential = DefaultAzureCredential()
         self.project = AIProjectClient(endpoint=settings.foundry_endpoint, credential=self.credential)
-        self.client = self.project.get_openai_client()
+        # Retries happen in create(), where each wait is measured and logged.
+        self.client = self.project.get_openai_client(max_retries=0)
         self.deployment = settings.deployment
 
     def close(self) -> None:
@@ -380,13 +393,61 @@ class FoundryRunner:
         self.project.close()
         self.credential.close()
 
-    def create(self, **request: Any) -> Any:
-        try:
-            return self.client.responses.create(**request)
-        except Exception as exc:
-            # Never fall back to the scripted assistant: say the model is unavailable.
-            log.warning("Model call failed (%s)", type(exc).__name__)
-            raise ModelUnavailable() from exc
+    def create(self, ctx: Context, **request: Any) -> tuple[Any, list]:
+        """One model round: the response and its function calls.
+
+        Each attempt is a model stage. A successful one counts as model_tool_selection or model_answer, a failed one
+        as model_failed. The wait before a retry counts as model_throttled after a 429 and as model_retry otherwise.
+        """
+        for retries in range(MAX_RETRIES + 1):
+            with ctx.timings.stage("model", "model_failed") as attempt:
+                ctx.usage.call()
+                try:
+                    response = self.client.responses.create(**request)
+                except Exception as exc:
+                    error = exc
+                    attempt.attributes["result"], attempt.failed = failure(exc), type(exc).__name__
+                else:
+                    # Counted before the status check: an incomplete round can still have used tokens.
+                    reported = ctx.usage.add(getattr(response, "usage", None))
+                    attempt.metrics |= {
+                        f"gen_ai.usage.{key}": reported[key]
+                        for key in ("input_tokens", "output_tokens")
+                        if key in reported
+                    }
+                    if response.status != "completed":
+                        raise RuntimeError("Model response incomplete or blocked; no answer released.")
+                    calls = [item for item in response.output if item.type == "function_call"]
+                    kind = "tool_selection" if calls else "answer"
+                    attempt.keys, attempt.attributes["round_kind"] = (f"model_{kind}",), kind
+                    return response, calls
+            wait = retry_wait(error, retries) if retries < MAX_RETRIES else None
+            if wait is None:
+                # Never fall back to the scripted assistant: say the model is unavailable.
+                log.warning("Model call failed (%s)", type(error).__name__)
+                raise ModelUnavailable() from error
+            category = failure(error)
+            throttled = category == "status_429"
+            log.warning(
+                "Model call %s: %s, retry %d of %d in %.1f s",
+                ctx.correlation_id,
+                category,
+                retries + 1,
+                MAX_RETRIES,
+                wait,
+                extra={
+                    "correlation_id": ctx.correlation_id,
+                    "event": "model_retry",
+                    "error_category": "throttled" if throttled else category,
+                    "status_code": getattr(error, "status_code", 0),
+                    "wait_ms": round(wait * 1000),
+                    "retry": retries + 1,
+                    **rate_limits(error),
+                },
+            )
+            with ctx.timings.stage("model_wait", "model_throttled" if throttled else "model_retry", result=category):
+                sleep(wait)
+        raise AssertionError("unreachable")
 
     def run(self, message: str, ctx: Context) -> Iterator[tuple[str, dict]]:
         ctx.assistant = "model"
@@ -414,26 +475,15 @@ class FoundryRunner:
         repaired = False
         for _ in range(12):
             # A round whose output calls tools is the model selecting tools; a round without calls answers.
-            with ctx.timings.stage("model", "model_failed") as model_round:
-                ctx.usage.call()
-                response = self.create(
-                    model=self.deployment,
-                    instructions=instructions,
-                    input=cast(Any, items),
-                    tools=cast(Any, tools),
-                    store=False,
-                    max_output_tokens=3000,
-                )
-                # Counted before the status check: an incomplete round can still have used tokens.
-                reported = ctx.usage.add(getattr(response, "usage", None))
-                model_round.metrics |= {
-                    f"gen_ai.usage.{key}": reported[key] for key in ("input_tokens", "output_tokens") if key in reported
-                }
-                if response.status != "completed":
-                    raise RuntimeError("Model response incomplete or blocked; no answer released.")
-                calls = [item for item in response.output if item.type == "function_call"]
-                kind = "tool_selection" if calls else "answer"
-                model_round.keys, model_round.attributes["round_kind"] = (f"model_{kind}",), kind
+            response, calls = self.create(
+                ctx,
+                model=self.deployment,
+                instructions=instructions,
+                input=cast(Any, items),
+                tools=cast(Any, tools),
+                store=False,
+                max_output_tokens=3000,
+            )
             if calls:
                 items.extend(item.model_dump(exclude_none=True) for item in response.output)
                 for call in calls:
@@ -475,3 +525,69 @@ class FoundryRunner:
             yield "reply", envelope(reply, ctx)
             return
         raise RuntimeError("Tool round limit reached; ask a narrower question.")
+
+
+def failure(error: Exception) -> str:
+    """A failed model call's category: its HTTP status, a timeout or a connection failure."""
+    if isinstance(error, APIStatusError):
+        return f"status_{error.status_code}"
+    if isinstance(error, APITimeoutError):
+        return "timeout"
+    if isinstance(error, APIConnectionError):
+        return "connection"
+    return "other"
+
+
+def retry_after(headers: Mapping[str, str]) -> float | None:
+    """Seconds the service asked to wait, read as the OpenAI SDK reads them."""
+    for name, divisor in (("retry-after-ms", 1000), ("retry-after", 1)):
+        value = headers.get(name)
+        if value is None:
+            continue
+        try:
+            delay = float(value)
+        except ValueError:
+            continue
+        if delay == math.inf and value.strip().lower() not in ("inf", "+inf", "infinity", "+infinity"):
+            return MAX_RETRY_AFTER + 1
+        return delay / divisor
+    try:
+        parsed = email.utils.parsedate_tz(headers.get("retry-after", ""))
+        return None if parsed is None else float(email.utils.mktime_tz(parsed) - time.time())
+    except (TypeError, ValueError, OverflowError, OSError):
+        return None
+
+
+def retry_wait(error: Exception, retries: int) -> float | None:
+    """Seconds to wait before retrying a failed model call, or None when the OpenAI SDK would not retry it.
+
+    Retried: timeouts, connection failures, and 408, 409, 429 and 5xx responses unless x-should-retry says
+    otherwise. A Retry-After of more than two minutes is not waited for. Without one, the wait backs off
+    exponentially from half a second, at most 8 seconds, less up to 25% jitter.
+    """
+    after = None
+    if isinstance(error, APIStatusError):
+        headers = error.response.headers
+        after = retry_after(headers)
+        if after is not None and math.isfinite(after) and after > MAX_RETRY_AFTER:
+            return None
+        flag = headers.get("x-should-retry")
+        status = error.status_code
+        if flag == "false" or (flag != "true" and status not in (408, 409, 429) and status < 500):
+            return None
+    elif not isinstance(error, APIConnectionError):
+        return None
+    if after is not None and math.isfinite(after) and 0 < after <= MAX_RETRY_AFTER:
+        return after
+    return min(INITIAL_RETRY_DELAY * 2.0**retries, MAX_RETRY_DELAY) * (1 - 0.25 * random())
+
+
+def rate_limits(error: Exception) -> dict[str, int]:
+    """The remaining tokens and requests the service reported with a failed call, when it did."""
+    headers = error.response.headers if isinstance(error, APIStatusError) else {}
+    found = {}
+    for name in ("tokens", "requests"):
+        value = headers.get(f"x-ratelimit-remaining-{name}", "")
+        if value.isdecimal():
+            found[f"ratelimit_remaining_{name}"] = int(value)
+    return found

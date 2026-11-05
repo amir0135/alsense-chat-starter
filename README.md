@@ -199,6 +199,7 @@ uv run python scripts/dev.py validate-flows [FILE ...]
 uv run python scripts/dev.py latency   # per-stage request timings the local demo recorded (p50, p95, max)
 uv run python scripts/dev.py feedback  # answer ratings with their context, never question or answer text
 uv run python scripts/dev.py usage     # requests, errors, latency and model tokens per user (no cost, no quota)
+uv run python scripts/dev.py measure   # measured run of the sample flows, then the latency and usage reports
 ```
 
 `tests/test_scenarios.py` runs every demo scenario and checks its promised result. Each evaluation case in `evals/`

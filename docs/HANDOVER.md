@@ -109,12 +109,45 @@ uv run python scripts/dev.py evals --mode model evals/local   # your own cases a
 uv run python scripts/dev.py latency  # per-stage timings of the requests the local demo recorded
 uv run python scripts/dev.py feedback # answer ratings with their context, never question or answer text
 uv run python scripts/dev.py usage    # requests, errors, latency and model tokens per user (no cost, no quota)
+uv run python scripts/dev.py measure  # measured run of the sample flows, then the latency and usage reports
 ```
 
 CI runs the same checks, plus the Docker smoke test, the Dev Container build and secret scans. `latency`,
 `feedback` and `usage` read the demo database (`--db PATH`; `latency` and `feedback` take `--limit N`,
 `feedback` `--rating up|down`, `usage` `--since DAYS` and `--user ID`, and both `--json`);
 [`architecture.md`](architecture.md) describes what each one reports.
+
+## Measuring model latency
+
+`uv run python scripts/dev.py measure --runs 5` signs in a synthetic user and, in each run, asks "Which sites can
+I access?", asks for a temperature report for Demo North for the last seven days, confirms the draft and reads its
+status. It then prints the `latency` and `usage` reports for that run (a fresh temporary database unless you pass
+`--db PATH`). It uses the assistant set by `AGENT_MODE` in `.env`: scripted by default, which only measures the
+backend. With `AGENT_MODE=foundry`, `FOUNDRY_PROJECT_ENDPOINT`, `MODEL_DEPLOYMENT` and an Azure sign-in
+(`az login`), every question makes real, billed calls to that deployment. Data is always synthetic;
+`DATA_SOURCE=alsense` is refused.
+
+How to read the model stages in the `latency` report (milliseconds; `runs` is the average number per request):
+
+| Stage | What it measures |
+|---|---|
+| `model_tool_selection` | Model calls that answered with tool calls: the model choosing lookups |
+| `model_answer` | The model call that wrote the final reply (a second one means the reply checks asked for a repair) |
+| `model_failed` | Model calls that failed: an error status, a timeout or a lost connection, until the failure |
+| `model_throttled` | Waiting after the service answered 429 (too many requests or tokens), before trying again |
+| `model_retry` | Waiting after any other retryable failure (408, 409, 5xx, timeout, connection) |
+| `tools`, `guard`, `persist` | Backend lookups, reply checks and storing the turn |
+| `total` | From the request's arrival to the end of its response |
+
+Failed calls are retried at most twice, as the OpenAI SDK would: the wait follows the service's `Retry-After`
+(up to two minutes) or backs off from half a second. Each retry is logged as a warning with the correlation id,
+status code and wait, so it also shows in Application Insights. A failure after the last retry is reported to the
+user as "the model is unavailable". The `usage` report adds the tokens per user, including reasoning tokens.
+
+Then compare with the model deployment's own metrics in the Azure portal: requests split by status code (any
+429s), time to response, and tokens per minute against the deployment's tokens-per-minute limit. Each call counts
+its prompt plus its maximum output tokens against that limit when it starts, so a few calls in a row can exceed a
+small deployment's limit. Many `model_throttled` waits mean the deployment's capacity, not the model, sets the pace.
 
 ## Diagnosing startup problems
 

@@ -41,6 +41,8 @@ SEQUENTIAL = (
     "model_tool_selection",
     "model_answer",
     "model_failed",
+    "model_throttled",
+    "model_retry",
     "tools",
     "guard",
     "persist",
@@ -81,12 +83,14 @@ class Stage:
     """A stage being measured. The caller can name its keys and add a result once the outcome is known.
 
     `metrics` are numbers recorded on the span under their own names, such as gen_ai.usage.input_tokens.
+    `failed` names the exception type of a failure the caller handled itself, to mark the span as failed.
     """
 
     def __init__(self, keys: tuple[str, ...], attributes: dict[str, str]):
         self.keys = keys
         self.attributes = attributes
         self.metrics: dict[str, int] = {}
+        self.failed = ""
 
 
 @dataclass
@@ -120,6 +124,8 @@ class Timings:
                 elapsed = (time.perf_counter() - begin) * 1000
                 for key in current.keys:
                     self.add(key, elapsed)
+                if current.failed:
+                    span.set_status(StatusCode.ERROR, current.failed)
                 span.set_attributes(
                     {
                         "alsense.correlation_id": self.correlation_id,
