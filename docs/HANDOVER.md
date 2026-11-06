@@ -68,6 +68,7 @@ All settings are in `.env`; `.env.example` explains each one. Restart after chan
 - **Scripted (default):** `AGENT_MODE=demo`. No AI model, no Azure, deterministic answers.
 - **Azure AI Foundry:** `AGENT_MODE=foundry`, `FOUNDRY_PROJECT_ENDPOINT` and `MODEL_DEPLOYMENT`, plus `az login`
   (or a service principal in a container). Startup fails if a value is missing; it never falls back to scripted.
+  Optional: `MODEL_REASONING_EFFORT` (default `high`) and `MODEL_MAX_OUTPUT_TOKENS` (default 8000).
 - **Trim the demo:** `ENABLE_REPORTS`, `ENABLE_TROUBLESHOOTING`, `ENABLE_SUPPORT_REQUESTS`.
 - **Rehearse failures:** `SYNTHETIC_FAULTS=api_timeout,report_failed` (see `.env.example` for the list).
 - **Real data:** `DATA_SOURCE=alsense` is refused until the Alsense adapters are implemented.
@@ -149,6 +150,14 @@ Then compare with the model deployment's own metrics in the Azure portal: reques
 its prompt plus its maximum output tokens against that limit when it starts, so a few calls in a row can exceed a
 small deployment's limit. Many `model_throttled` waits mean the deployment's capacity, not the model, sets the pace.
 
+Reasoning effort, the output limit and capacity interact. A higher `MODEL_REASONING_EFFORT` means more reasoning
+tokens: longer `model_tool_selection` and `model_answer` stages, and more output tokens in the `usage` report.
+Reasoning tokens count toward `MODEL_MAX_OUTPUT_TOKENS`, and a call that reaches the limit ends incomplete: the run
+fails, and a warning names the reason (`max_output_tokens`) with the call's output and reasoning tokens. Raise the
+limit or lower the effort. A higher limit makes every call reserve more of the deployment's tokens per minute, so
+fewer calls fit in a minute and `model_throttled` waits start sooner; raise the capacity to match
+([`azure-demo.md`](azure-demo.md#model-and-capacity) has the sizing rule).
+
 ## Diagnosing startup problems
 
 Start with the doctor; it names each problem and the fix:
@@ -167,6 +176,8 @@ docker compose exec app python scripts/doctor.py     # inside the running contai
 | Dependency downloads fail on a corporate network | Set `UV_DEFAULT_INDEX` to your package mirror, then `uv run --no-sync python scripts/dev.py setup` (or `docker compose build` with the variable set). Versions and hashes stay pinned. |
 | The app shows "Service unavailable" | The backend isn't running or crashed: check the terminal or `docker compose logs`. |
 | Chat says the session expired | Sessions last `SESSION_TTL_SECONDS`; start a new session. |
+| Every model question says the assistant is unavailable; the log shows `Model call failed (BadRequestError)` | The deployment refused a request setting. Use a reasoning model, or a `MODEL_REASONING_EFFORT` value it supports. |
+| Model answers fail; the log shows `not completed (incomplete, max_output_tokens)` | Reasoning used up the output limit. Raise `MODEL_MAX_OUTPUT_TOKENS` or lower `MODEL_REASONING_EFFORT`, then check the capacity. |
 
 ## Files that must never be committed
 

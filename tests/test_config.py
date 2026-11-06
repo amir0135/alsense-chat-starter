@@ -35,6 +35,7 @@ def test_defaults_need_no_environment():
     settings = load_settings({})
     assert (settings.app_port, settings.log_level, settings.db) == (8001, "INFO", "data/sessions.sqlite3")
     assert not settings.reset_on_start
+    assert (settings.reasoning_effort, settings.max_output_tokens) == ("high", 8000)
 
 
 def test_values_are_parsed():
@@ -45,8 +46,11 @@ def test_values_are_parsed():
             "LOG_LEVEL": "debug",
             "RESET_DEMO_DATA_ON_START": "true",
             "APP_PORT": "9001",
+            "MODEL_REASONING_EFFORT": "XHigh",
+            "MODEL_MAX_OUTPUT_TOKENS": "16000",
         }
     )
+    assert (settings.reasoning_effort, settings.max_output_tokens) == ("xhigh", 16000)
     assert settings.synthetic_faults == {"api_timeout", "report_failed"}
     assert settings.features == {"troubleshooting", "support"}
     assert (settings.log_level, settings.reset_on_start, settings.app_port) == ("DEBUG", True, 9001)
@@ -62,6 +66,10 @@ def test_values_are_parsed():
         ({"DATA_SOURCE": "mainframe"}, "DATA_SOURCE must be synthetic or alsense"),
         ({"SYNTHETIC_FAULTS": "gremlins"}, "unknown names"),
         ({"SCENARIOS_FILE": "missing.local.yaml"}, "SCENARIOS_FILE must point"),
+        ({"MODEL_REASONING_EFFORT": "extreme"}, "MODEL_REASONING_EFFORT must be one of none, minimal, low, medium"),
+        ({"MODEL_MAX_OUTPUT_TOKENS": "999"}, "MODEL_MAX_OUTPUT_TOKENS must be between 1000 and 128000"),
+        ({"MODEL_MAX_OUTPUT_TOKENS": "128001"}, "MODEL_MAX_OUTPUT_TOKENS must be between 1000 and 128000"),
+        ({"MODEL_MAX_OUTPUT_TOKENS": "8k"}, "MODEL_MAX_OUTPUT_TOKENS must be a whole number"),
     ],
 )
 def test_bad_values_fail_clearly(environ, problem):

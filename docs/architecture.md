@@ -62,7 +62,9 @@ repeat authorization. Duplicate confirmations reuse the stored result.
 
 The default runner is deterministic. Optional Foundry mode uses the Responses API with stateless model calls
 (`store=false`) and a bounded local history. The backend retains the conversation, runs function calls, and
-validates the final structured reply. It makes one repair attempt and then abstains.
+validates the final structured reply. It makes one repair attempt and then abstains. Each call asks for the
+configured reasoning effort and returns the model's reasoning as encrypted items, which go back to the model with
+the tool results, so it keeps its reasoning across tool calls while nothing is stored on the service.
 
 Guided troubleshooting flows are a separate deterministic path in both modes. The backend walks an
 operations-owned decision tree, identifies the site within the user's permitted sites, and runs its lookups

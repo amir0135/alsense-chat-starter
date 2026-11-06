@@ -78,9 +78,11 @@ def system_status(state) -> dict:
             _item(
                 "assistant",
                 "Assistant",
-                f"Azure AI Foundry · {settings.deployment}",
+                f"Azure AI Foundry · {settings.deployment} · reasoning {settings.reasoning_effort}",
                 "configured",
-                "Uses your Foundry deployment with backend-owned tools. Connectivity is checked per request.",
+                "Uses your Foundry deployment with backend-owned tools, up to "
+                f"{settings.max_output_tokens} output tokens per call including reasoning. "
+                "Connectivity is checked per request.",
             )
         )
     else:

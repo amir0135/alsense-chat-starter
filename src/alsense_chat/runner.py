@@ -394,6 +394,8 @@ class FoundryRunner:
         # Retries happen in create(), where each wait is measured and logged.
         self.client = self.project.get_openai_client(max_retries=0)
         self.deployment = settings.deployment
+        self.reasoning_effort = settings.reasoning_effort
+        self.max_output_tokens = settings.max_output_tokens
 
     def close(self) -> None:
         self.client.close()
@@ -423,6 +425,28 @@ class FoundryRunner:
                         if key in reported
                     }
                     if response.status != "completed":
+                        # Why, as the service's own categories: an output limit set too low shows up here.
+                        status, reason = as_category(response.status), unfinished_reason(response)
+                        attempt.attributes["result"] = f"{status}_{reason}"
+                        limit = request.get("max_output_tokens", 0)
+                        used = {key: reported[key] for key in ("output_tokens", "reasoning_tokens") if key in reported}
+                        log.warning(
+                            "Model response %s not completed (%s, %s): output tokens %s of %s, reasoning tokens %s",
+                            ctx.correlation_id,
+                            status,
+                            reason,
+                            used.get("output_tokens", "unknown"),
+                            limit,
+                            used.get("reasoning_tokens", "unknown"),
+                            extra={
+                                "correlation_id": ctx.correlation_id,
+                                "event": "model_incomplete",
+                                "response_status": status,
+                                "incomplete_reason": reason,
+                                "max_output_tokens": limit,
+                                **used,
+                            },
+                        )
                         raise RuntimeError("Model response incomplete or blocked; no answer released.")
                     calls = [item for item in response.output if item.type == "function_call"]
                     kind = "tool_selection" if calls else "answer"
@@ -489,7 +513,11 @@ class FoundryRunner:
                 input=cast(Any, items),
                 tools=cast(Any, tools),
                 store=False,
-                max_output_tokens=3000,
+                reasoning={"effort": self.reasoning_effort},
+                # The service keeps nothing (store=False), so the reasoning items passed back with the tool results
+                # carry the model's reasoning themselves, encrypted, and it continues from them.
+                include=["reasoning.encrypted_content"],
+                max_output_tokens=self.max_output_tokens,
             )
             if calls:
                 items.extend(item.model_dump(exclude_none=True) for item in response.output)
@@ -543,6 +571,17 @@ def failure(error: Exception) -> str:
     if isinstance(error, APIConnectionError):
         return "connection"
     return "other"
+
+
+def as_category(value: Any) -> str:
+    """A value the service reports as a category, such as a status or reason; anything else is "unknown"."""
+    return value if isinstance(value, str) and re.fullmatch(r"[a-z][a-z0-9_]{0,39}", value) else "unknown"
+
+
+def unfinished_reason(response: Any) -> str:
+    """Why a response didn't complete: its incomplete reason (max_output_tokens, content_filter) or error code."""
+    details, error = getattr(response, "incomplete_details", None), getattr(response, "error", None)
+    return as_category(getattr(details, "reason", None) or getattr(error, "code", None))
 
 
 def retry_after(headers: Mapping[str, str]) -> float | None:

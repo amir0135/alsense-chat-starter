@@ -83,7 +83,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Measuring {args.runs} run(s) with the {'model' if model else 'scripted'} assistant on synthetic data.")
         if model:
             print(
-                f"Model mode: every question makes real, billed calls to the deployment {settings.deployment}. "
+                f"Model mode: every question makes real, billed calls to the deployment {settings.deployment} "
+                f"(reasoning {settings.reasoning_effort}, up to {settings.max_output_tokens} output tokens per call). "
                 "It needs FOUNDRY_PROJECT_ENDPOINT, MODEL_DEPLOYMENT and an Azure sign-in (az login)."
             )
         with TestClient(create_app(settings)) as client:

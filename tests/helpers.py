@@ -65,11 +65,12 @@ def submit(client: TestClient, headers: dict, action_id: str):
 
 @dataclass
 class Round:
-    """One fake Responses API call: what it returns, the usage it reports and its status."""
+    """One fake Responses API call: what it returns, the usage it reports, its status and why it didn't complete."""
 
     output: Any
     usage: Any = None
     status: str = "completed"
+    reason: str | None = None
 
 
 class Call:
@@ -82,26 +83,35 @@ class Call:
         return {"type": self.type, "name": self.name, "arguments": self.arguments, "call_id": self.call_id}
 
 
-def foundry(monkeypatch, outputs: list) -> dict:
+def foundry(monkeypatch, outputs: list, requests: list | None = None) -> dict:
     """Model mode with a fake Responses API. Returns the settings that select it.
 
-    Each output is a (tool, arguments) pair that calls a tool, a dict that answers, an exception the call raises,
-    or a Round that wraps one of these with the usage it reports and its status.
+    Each output is a (tool, arguments) pair that calls a tool, a dict that answers, a list of output items returned
+    as they are, an exception the call raises, or a Round that wraps one of these with the usage it reports and
+    its status. `requests` receives a copy of each call's arguments.
     """
 
-    def create(**_):
+    def create(**request):
+        if requests is not None:
+            requests.append(json.loads(json.dumps(request)))
         call = outputs.pop(0)
         call = call if isinstance(call, Round) else Round(call)
         if isinstance(call.output, Exception):
             raise call.output
+        details = SimpleNamespace(reason=call.reason) if call.reason else None
         if isinstance(call.output, dict):
             text = json.dumps(call.output)
-            return SimpleNamespace(status=call.status, output=[], output_text=text, usage=call.usage)
-        return SimpleNamespace(status=call.status, output=[Call(*call.output)], usage=call.usage)
+            return SimpleNamespace(
+                status=call.status, output=[], output_text=text, usage=call.usage, incomplete_details=details
+            )
+        items = call.output if isinstance(call.output, list) else [Call(*call.output)]
+        return SimpleNamespace(status=call.status, output=items, usage=call.usage, incomplete_details=details)
 
     def runner(settings):
         instance = FoundryRunner.__new__(FoundryRunner)
         instance.deployment = settings.deployment
+        instance.reasoning_effort = settings.reasoning_effort
+        instance.max_output_tokens = settings.max_output_tokens
         instance.client = SimpleNamespace(responses=SimpleNamespace(create=create), close=lambda: None)
         instance.project = SimpleNamespace(close=lambda: None)
         instance.credential = SimpleNamespace(close=lambda: None)

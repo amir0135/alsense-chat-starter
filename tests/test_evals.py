@@ -239,6 +239,8 @@ def model_run(monkeypatch, turns, probe):
     def runner(settings):
         instance = FoundryRunner.__new__(FoundryRunner)
         instance.deployment = settings.deployment
+        instance.reasoning_effort = settings.reasoning_effort
+        instance.max_output_tokens = settings.max_output_tokens
         instance.client = SimpleNamespace(responses=SimpleNamespace(create=model.create), close=lambda: None)
         instance.project = SimpleNamespace(close=lambda: None)
         instance.credential = SimpleNamespace(close=lambda: None)

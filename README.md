@@ -186,7 +186,8 @@ secret. The defaults need no secrets.
 | Clean demo on start | `RESET_DEMO_DATA_ON_START=true` | Deletes `SESSION_DB` at startup |
 
 In Foundry mode your messages and synthetic tool results go to **your** Foundry project; credentials never do.
-The deployment must support the Responses API and function calling. To deploy the protected synthetic demo to
+The deployment must be a reasoning model with the Responses API and function calling; `MODEL_REASONING_EFFORT`
+(default `high`) and `MODEL_MAX_OUTPUT_TOKENS` (default 8000) tune it. To deploy the protected synthetic demo to
 your own Azure subscription (Container Apps, Foundry, Key Vault, monitoring), follow
 [`docs/azure-demo.md`](docs/azure-demo.md).
 

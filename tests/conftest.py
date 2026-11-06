@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
@@ -15,3 +17,15 @@ def spans(monkeypatch):
     monkeypatch.setattr(timing, "TRACER", provider.get_tracer("test"))
     yield exporter
     provider.shutdown()
+
+
+@pytest.fixture
+def warnings():
+    """Warnings logged on the alsense_chat logger, which Application Insights exports."""
+    records: list[logging.LogRecord] = []
+    handler = logging.Handler(logging.WARNING)
+    handler.emit = records.append  # type: ignore[method-assign]
+    logger = logging.getLogger("alsense_chat")
+    logger.addHandler(handler)
+    yield records
+    logger.removeHandler(handler)

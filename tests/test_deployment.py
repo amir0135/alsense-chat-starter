@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -37,6 +38,31 @@ def test_code_file_is_private_and_cannot_be_silently_overwritten(deploy_module, 
     with pytest.raises(FileExistsError):
         deploy_module.write_private(path, "replacement")
     assert path.read_text() == "synthetic-secret"
+
+
+def test_the_model_defaults_agree_across_the_templates_scripts_and_docs(deploy_module, monkeypatch):
+    seen = {}
+
+    def parse_args(parser, *_):
+        seen.update({name: parser.get_default(name) for name in ("model", "model_version", "model_capacity")})
+        raise SystemExit(0)
+
+    monkeypatch.setattr(deploy_module.argparse.ArgumentParser, "parse_args", parse_args)
+    with pytest.raises(SystemExit):
+        deploy_module.main()
+    model, version, capacity = seen["model"], seen["model_version"], seen["model_capacity"]
+    bicep = (ROOT / "infra" / "main.bicep").read_text()
+    params = dict(re.findall(r"^param (model\w+) \w+ = '?([^'\s]+)'?$", bicep, re.MULTILINE))
+    assert params == {
+        "modelName": model,
+        "modelVersion": version,
+        "modelDeployment": model,
+        "modelCapacity": str(capacity),
+    }
+    assert f"# MODEL_DEPLOYMENT={model}\n" in (ROOT / ".env.example").read_text()
+    guide = (ROOT / "docs" / "azure-demo.md").read_text()
+    assert f"**{model}** (version {version})" in guide and f"pinned version {version}, {capacity}K tokens" in guide
+    assert f"default capacity of {capacity} ({capacity}K TPM)" in guide
 
 
 def test_infrastructure_cloud_auth_and_export_boundary():

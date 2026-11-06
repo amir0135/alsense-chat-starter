@@ -1,6 +1,5 @@
 """Model calls that fail: the OpenAI SDK's retry policy, applied by the runner so each wait is measured."""
 
-import logging
 import time
 
 import httpx2
@@ -34,17 +33,6 @@ def waits(monkeypatch):
 
     monkeypatch.setattr(alsense_chat.runner, "sleep", sleep)
     return requested
-
-
-@pytest.fixture
-def warnings():
-    records: list[logging.LogRecord] = []
-    handler = logging.Handler(logging.WARNING)
-    handler.emit = records.append  # type: ignore[method-assign]
-    logger = logging.getLogger("alsense_chat")
-    logger.addHandler(handler)
-    yield records
-    logger.removeHandler(handler)
 
 
 def chat_record(tmp_path) -> dict:
