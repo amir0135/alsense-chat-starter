@@ -107,6 +107,23 @@ def test_one_rating_per_answer_that_can_change(tmp_path):
     assert set(ratings[0]["timings"]["ms"]) == {"session", "persist", "total"}
 
 
+def test_a_rating_survives_a_restart_and_can_still_change(tmp_path, capsys):
+    with app_client(tmp_path) as client:
+        headers = login(client)
+        answer_id = reply(client, headers, SITES)["answer_id"]
+        assert rate(client, headers, answer_id, rating="down", reason="incorrect").status_code == 200
+    [before] = rows(tmp_path, "feedback")
+    with app_client(tmp_path) as restarted:
+        changed = rate(restarted, headers, answer_id, rating="up")
+        assert (changed.status_code, changed.json()["rating"]) == (200, "up")
+    [after] = rows(tmp_path, "feedback")
+    assert (after["answer_id"], after["rating"], after["reason"]) == (answer_id, "up", None)
+    assert after["created"] == before["created"] and after["updated"] >= before["updated"]
+    assert feedback.main(["--db", str(tmp_path / "test.sqlite3"), "--json"]) == 0
+    [reviewed] = json.loads(capsys.readouterr().out)
+    assert (reviewed["answer_id"], reviewed["rating"], reviewed["reason"]) == (answer_id, "up", None)
+
+
 def test_the_context_comes_from_the_request_that_produced_the_answer(tmp_path):
     with app_client(tmp_path) as client:
         headers = {**login(client), "X-Correlation-ID": "reused-request-id"}

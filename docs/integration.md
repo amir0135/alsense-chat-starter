@@ -91,3 +91,16 @@ and cross-customer access.
 Run `uv run python scripts/dev.py test` on every change. Cross-user/site authorization failures must fail the build; never mark them
 as optional live tests. Real model evaluation should be explicit and separate, with no automatic exposure of
 customer data to a judge.
+
+The offline gate proves what the backend does with the answers it gets: that it keeps each user to their own
+sites, sends a confirmed draft to the service unchanged and categorizes failures. It can't prove what only the
+real systems decide. Those checks need the real services or a person:
+
+- whether the upstream APIs enforce the same permissions on the delegated token;
+- the real report jobs, their contents, links and expiry, and how the Alsense errors map to categories;
+- model latency, throttling and answer quality on these tools (`dev.py measure`, `dev.py evals --mode model`);
+- anything in the host application, such as an embedded frame's sign-in handoff or its dashboard;
+- telemetry export, the wording a user sees with live data, accessibility, and how the widget follows a long job.
+
+A test marked `xfail(strict=True)` records a known gap with its reason. It starts failing the build once the gap
+is fixed, so the marker is removed with the fix.

@@ -9,6 +9,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 import alsense_chat.app
+from alsense_chat.adapters.synthetic.services import SyntheticReports
 from alsense_chat.app import create_app
 from alsense_chat.config import Settings
 from alsense_chat.runner import FoundryRunner
@@ -61,6 +62,45 @@ def report_payload(site: str = "site-a", **changes) -> dict:
 
 def submit(client: TestClient, headers: dict, action_id: str):
     return client.post(f"/api/actions/{action_id}/submit", headers=headers, json={"confirmed": True})
+
+
+class RecordingReports(SyntheticReports):
+    """A report service that records what it receives, plays back job states and fails on demand.
+
+    `states` are the job states report_status returns in turn before "completed". `failure`, while set, is raised by
+    every submission and status call. `link`, when set, replaces the links the service returns.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.received: list[tuple[str, dict, str]] = []
+        self.states: list[str] = []
+        self.failure: Exception | None = None
+        self.link: str | None = None
+
+    def submit_report(self, user, request, idempotency_key):
+        self.check()
+        self.received.append(("report", request.model_dump(mode="json"), idempotency_key))
+        return self.linked(super().submit_report(user, request, idempotency_key))
+
+    def schedule_report(self, user, request, idempotency_key):
+        self.check()
+        self.received.append(("scheduled_report", request.model_dump(mode="json"), idempotency_key))
+        return self.linked(super().schedule_report(user, request, idempotency_key))
+
+    def report_status(self, user, job_id):
+        self.check()
+        job = self.linked(super().report_status(user, job_id))
+        if self.states and self.states.pop(0) == "processing":
+            return job.model_copy(update={"state": "processing", "url": None, "completed_at": None, "expires_at": None})
+        return job
+
+    def check(self) -> None:
+        if self.failure is not None:
+            raise self.failure
+
+    def linked(self, record):
+        return record.model_copy(update={"url": self.link}) if self.link else record
 
 
 @dataclass
