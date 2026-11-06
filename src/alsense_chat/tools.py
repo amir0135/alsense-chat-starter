@@ -14,6 +14,8 @@ from .config import FEATURES
 from .domains import reporting, sites
 from .domains.base import Arguments, Handler, InvalidRequest, safe_link
 from .store import MissingRecord, Store
+from .timing import Timings
+from .usage import Usage
 
 __all__ = ["HANDLERS", "Context", "InvalidRequest", "safe_link", "tool_definitions"]
 
@@ -227,6 +229,8 @@ class Context:
     actions: list[dict] = field(default_factory=list)
     calls: list[dict] = field(default_factory=list)
     verified_sites: set[str] = field(default_factory=set)
+    timings: Timings = field(default_factory=Timings)
+    usage: Usage = field(default_factory=Usage)
 
     def permitted_site_ids(self) -> set[str]:
         return {site.id for site in self.user.sites if site.tenant_id == self.user.tenant_id}
@@ -266,6 +270,14 @@ class Context:
     def execute(
         self, name: str, args: Any, *, caller: Caller = "scripted", allowed: Iterable[str] | None = None
     ) -> dict:
+        """Run one tool call, timed as a whole: argument checks, permissions and the service it calls."""
+        label = name if name in HANDLERS else "unknown"
+        with self.timings.stage("tool", "tools", f"tool.{label}", tool=label) as current:
+            output = self._execute(name, args, caller, allowed)
+            current.attributes["result"] = output.get("category", "ok")
+        return output
+
+    def _execute(self, name: str, args: Any, caller: Caller, allowed: Iterable[str] | None) -> dict:
         tool = load_agent().tools().get(name)
         if tool is None or not self.may_call(tool, caller, allowed):
             return self.failed(name, "unknown_tool", "Unknown tool.")

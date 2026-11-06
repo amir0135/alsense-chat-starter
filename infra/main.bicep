@@ -6,11 +6,12 @@ param environmentName string = 'alsense-demo'
 
 param location string = 'northeurope'
 param aiLocation string = 'swedencentral'
-param modelName string = 'gpt-5-mini'
-param modelVersion string = '2025-08-07'
-param modelDeployment string = 'gpt-5-mini'
+param modelName string = 'gpt-6.1-terra'
+param modelVersion string = '2026-10-26'
+param modelDeployment string = 'gpt-6.1-terra'
+@description('Thousands of tokens per minute. Each model call reserves its prompt plus MODEL_MAX_OUTPUT_TOKENS.')
 @minValue(1)
-param modelCapacity int = 10
+param modelCapacity int = 250
 
 @secure()
 @minLength(32)

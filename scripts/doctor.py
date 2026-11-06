@@ -172,7 +172,9 @@ def check_mode(report: Report, settings) -> None:
     if settings.agent_mode == "demo":
         report.add("ok", "Scripted assistant selected: no AI model, no Azure credentials needed")
     elif settings.foundry_endpoint and settings.deployment:
-        report.add("ok", f"Azure AI Foundry mode: deployment {settings.deployment}")
+        report.add(
+            "ok", f"Azure AI Foundry mode: deployment {settings.deployment}, reasoning {settings.reasoning_effort}"
+        )
         az = shutil.which("az")
         signed_in = (
             bool(az)

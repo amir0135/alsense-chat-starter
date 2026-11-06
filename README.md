@@ -148,9 +148,10 @@ My sensor is offline. What should I check?
 
 ## 6. Synthetic demo scenarios
 
-Open **Demo scenarios** in the app. Each scenario lists what it demonstrates, the starting user and the expected
-result; **Start scenario** signs in as that user (with any synthetic faults it needs) and a coach walks through
-the steps. **Reset scenario** starts again from a clean conversation.
+Open **Demo scenarios** in the app (shown with synthetic data when at least one scenario can run). Each scenario
+lists what it demonstrates, the starting user and the expected result; **Start scenario** signs in as that user
+(with any synthetic faults it needs) and a coach walks through the steps. **Reset scenario** starts again from a
+clean conversation.
 
 | Scenario | Shows |
 |---|---|
@@ -185,7 +186,8 @@ secret. The defaults need no secrets.
 | Clean demo on start | `RESET_DEMO_DATA_ON_START=true` | Deletes `SESSION_DB` at startup |
 
 In Foundry mode your messages and synthetic tool results go to **your** Foundry project; credentials never do.
-The deployment must support the Responses API and function calling. To deploy the protected synthetic demo to
+The deployment must be a reasoning model with the Responses API and function calling; `MODEL_REASONING_EFFORT`
+(default `high`) and `MODEL_MAX_OUTPUT_TOKENS` (default 8000) tune it. To deploy the protected synthetic demo to
 your own Azure subscription (Container Apps, Foundry, Key Vault, monitoring), follow
 [`docs/azure-demo.md`](docs/azure-demo.md).
 
@@ -196,6 +198,10 @@ uv run python scripts/dev.py test      # unit, API, contract-fixture and evaluat
 uv run python scripts/dev.py lint      # ruff format and lint, mypy, widget JavaScript, protected files
 uv run python scripts/dev.py evals     # behaviour cases in evals/ only, a pass/fail line per case
 uv run python scripts/dev.py validate-flows [FILE ...]
+uv run python scripts/dev.py latency   # per-stage request timings the local demo recorded (p50, p95, max)
+uv run python scripts/dev.py feedback  # answer ratings with their context, never question or answer text
+uv run python scripts/dev.py usage     # requests, errors, latency and model tokens per user (no cost, no quota)
+uv run python scripts/dev.py measure   # measured run of the sample flows, then the latency and usage reports
 ```
 
 `tests/test_scenarios.py` runs every demo scenario and checks its promised result. Each evaluation case in `evals/`

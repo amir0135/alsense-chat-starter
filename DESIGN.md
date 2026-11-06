@@ -175,7 +175,7 @@ White work surfaces and a cool-gray rail create the hierarchy; red is reserved f
 ### Named Rules
 **The Evidence-First Rule.** The answer remains readable without expanding technical details; source evidence is attached to the answer it supports.
 
-**The Synthetic-Outcome Rule.** Use success green only for completed mock actions, and label those outcomes synthetic.
+**The Synthetic-Outcome Rule.** Use success green only for completed actions, and label those outcomes synthetic whenever the backend reports synthetic data. With any other data source the same states use neutral wording ("Report ready", "Download report", "Submitted").
 
 ## Typography
 
@@ -222,12 +222,13 @@ Controls and evidence containers use small 3–5px corners. The composer is slig
 - **Suggestions:** White, outlined rows with a small red utility mark and concise title plus explanation.
 - **Drafts:** Inline bordered panel above the composer. Never hide a consequential review form in a modal. The report draft is a builder: a live one-line summary and the prepare action stay pinned to the panel's bottom edge while its controls scroll. A Delivery segmented control switches between On demand (period chips) and Scheduled (Repeats chips, a Send to field and a Runs date pair). Scheduled mode grays out report types the service can't schedule and labels them "On demand only"; it never hides them.
 - **Action confirmation:** Show the chosen site and fields, state that nothing has been sent, then provide one explicit confirmation action. A three-step tracker (prepared, confirm, synthetic result) shows where the action stands; "Edit details" prepares a replacement draft and marks the old one replaced. Once confirmed, the line under the title says what happened instead of "nothing has been sent".
-- **Report result:** A confirmed report shows its download link at once, as the card's one Success green button ("Download synthetic report" with a down arrow), and directly below it the expiry in muted text: "Expires 24 hours after the report was ready · date, time". The lifetime and time come from the service, never from the widget. While the job runs, a small spinner and one line take the button's place; an expired or failed result says so in error text with no link. A confirmed schedule shows its first run date and a link to the synthetic schedule instead.
+- **Report result:** A confirmed report shows its download link at once, as the card's one Success green button ("Download synthetic report" with a down arrow, or "Download report" when the data isn't synthetic), and directly below it the expiry in muted text: "Expires 24 hours after the report was ready · date, time". The lifetime and time come from the service, never from the widget. While the job runs, a small spinner and one line take the button's place; an expired or failed result says so in error text with no link. A confirmed schedule shows its first run date and a link to the schedule instead.
 
 ### Synthetic banner
 - A permanent full-width strip above the workspace and on the System status page, in Warning Wash with Warning Ink. It says whether the demo is local or hosted, that it uses synthetic data and does not connect to Alsense, and links to System status. It is never dismissible.
 
 ### Demo scenarios
+- **Entry points:** The rail's "Demo scenarios" button and the welcome view's "Run a demo scenario" link appear only when the backend reports synthetic data and at least one scenario can run. Otherwise both are hidden.
 - **Gallery:** opens in place of the conversation (no modal), with a page title and two sections, "Core journeys" and "Failure cases". Each scenario is a row in one bordered list, not a grid of cards: title, what it demonstrates, "Starts as" and "Expected" pairs, a Warning Wash chip per synthetic fault, and Start scenario / Reset scenario on the right. The running scenario's row takes Signal Wash with a "Running" pill; an unavailable one is gray with its reason in error text.
 - **Coach:** an inline panel above the composer with a Signal Red border on Signal Wash. The heading is the scenario title; the line below starts with "Step N of M." followed by the presenter's note. Actions: Run step (primary), Reset scenario (secondary) and End (text). When complete, the panel turns success green and shows the expected result. No eyebrow above the heading.
 
@@ -258,6 +259,7 @@ Controls and evidence containers use small 3–5px corners. The composer is slig
 - **Actions:** Keep report and support drafts inline and distinguish prepared, submitting, submitted, and failed states.
 - **Guided checks:** Each step is an assistant turn labelled with the check and step number, with Yes/No or site pills as answers; the chosen answer stays highlighted and earlier steps lock. Results show "What we checked" and, when the tree says so, a prefilled support request instead of free-form advice.
 - **Answer buttons:** When the assistant asks a question it can offer the answers, they appear as the same pills as guided-check answers (site pills carry the site glyph). Choosing one highlights it, locks the group and sends the complete request; only the newest question's buttons stay active. Details that are easier to give in a form, such as recipients, get one "Add recipients in the form" button that opens the builder with everything else filled in.
+- **Answer feedback:** The last line of a completed reply asks "Was this answer useful?" with two small outlined pills, Helpful and Not helpful, each with a thumb glyph. The chosen one takes the selection style (Signal Red border on Signal Wash) and can be changed. After Not helpful, optional reason pills follow (Incorrect, Incomplete, Too slow, Something else). A muted line confirms the save; a failure says so in error text and never blocks the conversation. Guided-check steps that still wait for an answer, and the menu of checks, carry no feedback.
 - **Lookups behind a draft or a question:** Don't repeat the site list or report catalog above a draft card or answer buttons; "Why this result?" lists what was looked up.
 
 ## Do's and Don'ts

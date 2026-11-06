@@ -62,7 +62,9 @@ repeat authorization. Duplicate confirmations reuse the stored result.
 
 The default runner is deterministic. Optional Foundry mode uses the Responses API with stateless model calls
 (`store=false`) and a bounded local history. The backend retains the conversation, runs function calls, and
-validates the final structured reply. It makes one repair attempt and then abstains.
+validates the final structured reply. It makes one repair attempt and then abstains. Each call asks for the
+configured reasoning effort and returns the model's reasoning as encrypted items, which go back to the model with
+the tool results, so it keeps its reasoning across tool calls while nothing is stored on the service.
 
 Guided troubleshooting flows are a separate deterministic path in both modes. The backend walks an
 operations-owned decision tree, identifies the site within the user's permitted sites, and runs its lookups
@@ -74,6 +76,47 @@ scenario, flow id and version, tools called with their result category, allowlis
 length), confirmation state, outcome and error category, never tokens or message text. Each reply carries a
 user-safe "Why this result?" explanation built from the same facts. `/api/system` and the `/system` page report,
 without secrets, which capabilities are synthetic, configured, disabled or future integrations.
+
+Chat turns, guided checks, confirmations and status reads also record their timings in the audit record, as
+milliseconds and run counts per stage (`src/alsense_chat/timing.py`): the session lookup; routing, which is the
+scripted assistant's tool selection and, in model mode, also builds the routed tool set; the model history; model
+rounds that select tools (`model_tool_selection`) apart from the round that answers (`model_answer`), failed
+model calls (`model_failed`) and the waits before retrying them (`model_throttled` after a 429, `model_retry`
+otherwise; the runner applies the OpenAI SDK's retry policy itself and logs each retry as a warning); each tool
+call including its service (`tool.<name>`, summed as `tools`); the reply checks (`guard`); storing the turn; and
+the offsets of the first streamed event, the reply and the end of the request. With Application Insights
+configured, each stage is also a span whose attributes are only the correlation id, stage, tool, result category
+and round kind. The widget measures its side of a chat request (response headers, first event, reply, reply on
+screen) and sends the numbers with the correlation id to `POST /api/timings`, which accepts them only for a
+request of the same session. `uv run python scripts/dev.py latency` reports p50, p95 and maximum per stage. This
+starter has no iframe embedding and no host dashboard, so message time between frames and the host's rendering
+can't be measured here. A host that embeds the assistant can measure those itself and report them keyed by the
+correlation id, which every response returns and a well-formed incoming `X-Correlation-ID` header sets; the
+message contract between host and widget is not defined in this starter.
+
+Every stored reply gets a random answer id, kept with the turn and the request's correlation id. The widget
+offers Helpful and Not helpful on completed replies, not on guided-check steps that still wait for an answer;
+`POST /api/answers/{answer_id}/feedback` accepts a rating for an answer of the same session and, after a thumbs
+down, one reason from a fixed list (incorrect, incomplete, too slow, other). Each answer has one feedback row; a
+later rating replaces it. The row keeps the session and user id, the correlation id and a snapshot of categories
+and numbers: reply status, routed domains, guided-check id, version and outcome, tools with their result
+categories, error category, assistant, data source, app version and total latency. Each value must be one the
+code or the loaded flows define; anything else is stored as "other", a tool name the model invented as
+"unknown", and a tool result keeps only its kind and a count or known state, never an upstream detail. It never
+holds the question, the answer text, sources, guided-check answers or free text; those stay in the session's
+turns, which the review does not read. A rating is accepted once the answer's request is recorded, which the
+widget waits for. `uv run python scripts/dev.py feedback` lists the ratings, newest first. Audit records now
+also carry the app version and data source that produced them, and a chat record the answer id of its reply.
+
+Usage is recorded per authenticated user on the same audit records: the event (requests), the error category,
+the total time and, for chat turns and guided-check steps, a numbers-only usage record of the Responses API calls
+made (failed ones included), how many reported token usage and the tokens they reported (input, output, total,
+cached input and reasoning; zero calls for the scripted assistant). Model spans carry `gen_ai.usage.input_tokens`
+and `gen_ai.usage.output_tokens`, and each request's log line carries the user id, error category, model calls
+and token counts as Application Insights custom dimensions. `uv run python scripts/dev.py usage` summarizes
+requests by event, errors by category, latency and tokens per user. Cost is not calculated because the starter
+has no approved price source: cost is tokens times the approved rate for the deployment, from a source the
+owners choose. Nothing limits usage yet; a quota would be enforced at the start of `POST /api/chat`.
 
 SQLite supports one local instance and survives process restarts. The schema is versioned with
 `PRAGMA user_version` and migrated in place at startup. It is not a shared cloud session store. A real

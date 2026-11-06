@@ -46,11 +46,11 @@ Choose a synthetic user in the **Demo session** panel and press **Start demo ses
 
 ## Running a scripted demo
 
-Open **Demo scenarios** in the rail (or "Run a demo scenario" on the welcome view). Each scenario shows what it
-demonstrates, the starting user and the expected result. **Start scenario** signs in as the right user with any
-synthetic faults it needs; the coach above the composer then shows each step's talking point and a **Run step**
-button. **Reset scenario** starts it again from a clean conversation. Scenarios live in
-`src/alsense_chat/scenarios.yaml`.
+Open **Demo scenarios** in the rail (or "Run a demo scenario" on the welcome view). Both appear only with
+synthetic data, when at least one scenario can run. Each scenario shows what it demonstrates, the starting user
+and the expected result. **Start scenario** signs in as the right user with any synthetic faults it needs; the
+coach above the composer then shows each step's talking point and a **Run step** button. **Reset scenario**
+starts it again from a clean conversation. Scenarios live in `src/alsense_chat/scenarios.yaml`.
 
 ## Resetting the demo
 
@@ -68,6 +68,7 @@ All settings are in `.env`; `.env.example` explains each one. Restart after chan
 - **Scripted (default):** `AGENT_MODE=demo`. No AI model, no Azure, deterministic answers.
 - **Azure AI Foundry:** `AGENT_MODE=foundry`, `FOUNDRY_PROJECT_ENDPOINT` and `MODEL_DEPLOYMENT`, plus `az login`
   (or a service principal in a container). Startup fails if a value is missing; it never falls back to scripted.
+  Optional: `MODEL_REASONING_EFFORT` (default `high`) and `MODEL_MAX_OUTPUT_TOKENS` (default 8000).
 - **Trim the demo:** `ENABLE_REPORTS`, `ENABLE_TROUBLESHOOTING`, `ENABLE_SUPPORT_REQUESTS`.
 - **Rehearse failures:** `SYNTHETIC_FAULTS=api_timeout,report_failed` (see `.env.example` for the list).
 - **Real data:** `DATA_SOURCE=alsense` is refused until the Alsense adapters are implemented.
@@ -106,9 +107,56 @@ uv run python scripts/dev.py test     # tests, contract fixtures and evaluations
 uv run python scripts/dev.py lint     # formatting, lint, types, JavaScript, protected files
 uv run python scripts/dev.py evals    # only the evaluation cases, with a pass/fail line per case
 uv run python scripts/dev.py evals --mode model evals/local   # your own cases against the Foundry model
+uv run python scripts/dev.py latency  # per-stage timings of the requests the local demo recorded
+uv run python scripts/dev.py feedback # answer ratings with their context, never question or answer text
+uv run python scripts/dev.py usage    # requests, errors, latency and model tokens per user (no cost, no quota)
+uv run python scripts/dev.py measure  # measured run of the sample flows, then the latency and usage reports
 ```
 
-CI runs the same checks, plus the Docker smoke test, the Dev Container build and secret scans.
+CI runs the same checks, plus the Docker smoke test, the Dev Container build and secret scans. `latency`,
+`feedback` and `usage` read the demo database (`--db PATH`; `latency` and `feedback` take `--limit N`,
+`feedback` `--rating up|down`, `usage` `--since DAYS` and `--user ID`, and both `--json`);
+[`architecture.md`](architecture.md) describes what each one reports.
+
+## Measuring model latency
+
+`uv run python scripts/dev.py measure --runs 5` signs in a synthetic user and, in each run, asks "Which sites can
+I access?", asks for a temperature report for Demo North for the last seven days, confirms the draft and reads its
+status. It then prints the `latency` and `usage` reports for that run (a fresh temporary database unless you pass
+`--db PATH`). It uses the assistant set by `AGENT_MODE` in `.env`: scripted by default, which only measures the
+backend. With `AGENT_MODE=foundry`, `FOUNDRY_PROJECT_ENDPOINT`, `MODEL_DEPLOYMENT` and an Azure sign-in
+(`az login`), every question makes real, billed calls to that deployment. Data is always synthetic;
+`DATA_SOURCE=alsense` is refused.
+
+How to read the model stages in the `latency` report (milliseconds; `runs` is the average number per request):
+
+| Stage | What it measures |
+|---|---|
+| `model_tool_selection` | Model calls that answered with tool calls: the model choosing lookups |
+| `model_answer` | The model call that wrote the final reply (a second one means the reply checks asked for a repair) |
+| `model_failed` | Model calls that failed: an error status, a timeout or a lost connection, until the failure |
+| `model_throttled` | Waiting after the service answered 429 (too many requests or tokens), before trying again |
+| `model_retry` | Waiting after any other retryable failure (408, 409, 5xx, timeout, connection) |
+| `tools`, `guard`, `persist` | Backend lookups, reply checks and storing the turn |
+| `total` | From the request's arrival to the end of its response |
+
+Failed calls are retried at most twice, as the OpenAI SDK would: the wait follows the service's `Retry-After`
+(up to two minutes) or backs off from half a second. Each retry is logged as a warning with the correlation id,
+status code and wait, so it also shows in Application Insights. A failure after the last retry is reported to the
+user as "the model is unavailable". The `usage` report adds the tokens per user, including reasoning tokens.
+
+Then compare with the model deployment's own metrics in the Azure portal: requests split by status code (any
+429s), time to response, and tokens per minute against the deployment's tokens-per-minute limit. Each call counts
+its prompt plus its maximum output tokens against that limit when it starts, so a few calls in a row can exceed a
+small deployment's limit. Many `model_throttled` waits mean the deployment's capacity, not the model, sets the pace.
+
+Reasoning effort, the output limit and capacity interact. A higher `MODEL_REASONING_EFFORT` means more reasoning
+tokens: longer `model_tool_selection` and `model_answer` stages, and more output tokens in the `usage` report.
+Reasoning tokens count toward `MODEL_MAX_OUTPUT_TOKENS`, and a call that reaches the limit ends incomplete: the run
+fails, and a warning names the reason (`max_output_tokens`) with the call's output and reasoning tokens. Raise the
+limit or lower the effort. A higher limit makes every call reserve more of the deployment's tokens per minute, so
+fewer calls fit in a minute and `model_throttled` waits start sooner; raise the capacity to match
+([`azure-demo.md`](azure-demo.md#model-and-capacity) has the sizing rule).
 
 ## Diagnosing startup problems
 
@@ -128,6 +176,8 @@ docker compose exec app python scripts/doctor.py     # inside the running contai
 | Dependency downloads fail on a corporate network | Set `UV_DEFAULT_INDEX` to your package mirror, then `uv run --no-sync python scripts/dev.py setup` (or `docker compose build` with the variable set). Versions and hashes stay pinned. |
 | The app shows "Service unavailable" | The backend isn't running or crashed: check the terminal or `docker compose logs`. |
 | Chat says the session expired | Sessions last `SESSION_TTL_SECONDS`; start a new session. |
+| Every model question says the assistant is unavailable; the log shows `Model call failed (BadRequestError)` | The deployment refused a request setting. Use a reasoning model, or a `MODEL_REASONING_EFFORT` value it supports. |
+| Model answers fail; the log shows `not completed (incomplete, max_output_tokens)` | Reasoning used up the output limit. Raise `MODEL_MAX_OUTPUT_TOKENS` or lower `MODEL_REASONING_EFFORT`, then check the capacity. |
 
 ## Files that must never be committed
 

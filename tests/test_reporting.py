@@ -92,6 +92,33 @@ def test_the_report_format_must_be_offered_by_its_type(tmp_path):
     assert "error" not in ctx.execute("prepare_report", {**period, "report_type": "temperature-log", "format": "xlsx"})
 
 
+def test_a_report_period_cannot_end_after_today(tmp_path):
+    ctx = context(tmp_path)
+    today = date.today()
+    report = {"site_id": "site-a", "report_type": "temperature-log", "format": "pdf"}
+
+    def period(end_in_days: int) -> dict:
+        end = today + timedelta(days=end_in_days)
+        return {**report, "start": (end - timedelta(days=6)).isoformat(), "end": end.isoformat()}
+
+    later = ctx.execute("prepare_report", period(2))
+    assert later["category"] == "invalid_input" and "The period can't end after today." in later["error"]
+    assert ctx.actions == []
+    # The widget checks the browser's date, which can be a day ahead of the server's.
+    assert "error" not in ctx.execute("prepare_report", period(1))
+    assert "error" not in ctx.execute("prepare_report", period(0))
+
+
+def test_a_future_period_asked_for_in_chat_becomes_a_question_not_a_draft(tmp_path):
+    end = date.today() + timedelta(days=3)
+    payload = {"site_id": "site-a", "report_type": "temperature-log", "format": "pdf"}
+    payload |= {"start": (end - timedelta(days=6)).isoformat(), "end": end.isoformat()}
+    with app_client(tmp_path) as client:
+        answer = events(client, login(client), f"/report {json.dumps(payload)}")[-1][1]
+    assert answer["status"] == "clarification" and answer["actions"] == []
+    assert answer["text"].startswith("The period can't end after today.")
+
+
 def test_confirmed_report_has_a_download_link_that_expires_after_a_day(tmp_path):
     with app_client(tmp_path) as client:
         headers = login(client)
