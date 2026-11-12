@@ -53,7 +53,9 @@ domains and offered tools are audited with every chat turn.
 Site names are resolved in the backend against the user's permitted sites (`domains/sites.py`). A model may pass a
 site id to a tool only after `get_permitted_sites` resolved exactly that site in the same turn; otherwise the call
 fails as `unverified_site`. The reply guard rejects any claim that something was created, scheduled or sent
-unless a status from the service confirmed it in that turn.
+unless a status from the service confirmed it in that turn. It also rejects any claim that the assistant opened,
+filtered or applied something in the app, such as a dashboard, view or filter, because no tool can; guidance such
+as "check whether the door was opened" is allowed.
 
 Tool arguments are validated against typed schemas. Sites are filtered by both tenant and allowed-site list.
 Support drafts also validate the alarm/site pair. Prepared actions belong to the session that created them.

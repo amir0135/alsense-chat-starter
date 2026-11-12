@@ -1,4 +1,5 @@
 import json
+import logging
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -16,6 +17,8 @@ from .domains.base import Arguments, Handler, InvalidRequest, safe_link
 from .store import MissingRecord, Store
 from .timing import Timings
 from .usage import Usage
+
+log = logging.getLogger(__name__)
 
 __all__ = ["HANDLERS", "Context", "InvalidRequest", "safe_link", "tool_definitions"]
 
@@ -252,9 +255,24 @@ class Context:
         """Re-check permissions, then call the configured service. Only the confirmation endpoint calls this."""
         self.validate_action(action["kind"], action["payload"])
         if action["kind"] in reporting.KINDS:
-            return reporting.submit(self, action)
-        ticket = SupportRequest.model_validate(action["payload"])
-        return self.services.support.submit_request(self.user, ticket, action["id"]).model_dump(mode="json")
+            result = reporting.submit(self, action)
+        else:
+            ticket = SupportRequest.model_validate(action["payload"])
+            result = self.services.support.submit_request(self.user, ticket, action["id"]).model_dump(mode="json")
+        if result.get("url") and not safe_link(result["url"]):
+            # The submission stands, since the service accepted it, but its link is never passed on.
+            log.warning(
+                "Request %s: withheld a %s link outside the approved path",
+                self.correlation_id,
+                action["kind"],
+                extra={
+                    "correlation_id": self.correlation_id,
+                    "event": "unapproved_link",
+                    "action_kind": action["kind"],
+                },
+            )
+            result["url"] = ""
+        return result
 
     @staticmethod
     def may_call(tool: Tool, caller: Caller, allowed: Iterable[str] | None) -> bool:

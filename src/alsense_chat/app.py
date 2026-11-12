@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .adapters import IntegrationError, Services, build_services
 from .adapters.contracts import User
+from .adapters.errors import ERRORS
 from .adapters.interfaces import PersonaDirectory
 from .adapters.synthetic import FAULTS, with_faults
 from .config import ROOT, Settings, load_settings
@@ -507,10 +508,14 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         log_request(ctx, "status", outcome or "", output.get("category"), timings)
         if "error" not in output:
             return output["data"]
-        status = {"not_found": 404, "forbidden": 403, "disabled": 403, "invalid_input": 400}.get(
-            output["category"], 503
+        category = output["category"]
+        # An upstream failure keeps its documented status (504 for a timeout, 401 for a refused sign-in).
+        status = (
+            ERRORS[category].http_status
+            if category in ERRORS
+            else {"disabled": 403, "invalid_input": 400}.get(category, 503)
         )
-        raise HTTPException(status, output["error"], headers={"X-Error-Category": output["category"]})
+        raise HTTPException(status, output["error"], headers={"X-Error-Category": category})
 
     @app.post("/api/timings", status_code=204)
     def client_timing(body: ClientTiming, ctx: Annotated[Context, Depends(context)]) -> None:

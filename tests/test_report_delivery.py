@@ -11,25 +11,25 @@ from helpers import RecordingReports, login, reply, submit
 from alsense_chat.adapters import synthetic
 from alsense_chat.adapters.contracts import ReportRequest, ScheduledReportRequest
 from alsense_chat.adapters.errors import ServiceTimeout, ServiceUnavailable, Unauthenticated
+from alsense_chat.adapters.synthetic.services import SyntheticSupport
 from alsense_chat.app import create_app
 from alsense_chat.config import Settings
 from alsense_chat.store import Store
 
 REPORT = "Create a temperature report for Demo North for the last seven days"
 OFF_PATH = "https://reports.example.invalid/report.pdf"
-STATUS_CODES = (
-    "Finding: GET /api/actions/{id}/status answers 503 for every upstream category the map doesn't name, while "
-    "confirming answers the documented status (504 for a timeout, 401 for a rejected sign-in)."
-)
-OFF_PATH_LINKS = (
-    "Finding: only an on-demand job's status withholds a link outside /reference/; confirming a report or schedule "
-    "and a schedule's status return the service's link as it is."
-)
 
 
-def app(tmp_path, reports: RecordingReports) -> TestClient:
-    services = replace(synthetic.build(), reports=reports)
-    return TestClient(create_app(Settings(db=str(tmp_path / "test.sqlite3")), services))
+class OffPathSupport(SyntheticSupport):
+    """A support service whose confirmation links outside the approved path."""
+
+    def submit_request(self, user, request, idempotency_key):
+        return super().submit_request(user, request, idempotency_key).model_copy(update={"url": OFF_PATH})
+
+
+def app(tmp_path, reports: RecordingReports, **services) -> TestClient:
+    configured = replace(synthetic.build(), reports=reports, **services)
+    return TestClient(create_app(Settings(db=str(tmp_path / "test.sqlite3")), configured))
 
 
 def stored(tmp_path, action_id: str) -> dict:
@@ -93,8 +93,8 @@ def test_a_processing_job_shows_its_link_only_once_it_completes(tmp_path):
     ("error", "status"),
     [
         (ServiceUnavailable("reports"), 503),
-        pytest.param(ServiceTimeout("reports"), 504, marks=pytest.mark.xfail(strict=True, reason=STATUS_CODES)),
-        pytest.param(Unauthenticated("reports"), 401, marks=pytest.mark.xfail(strict=True, reason=STATUS_CODES)),
+        (ServiceTimeout("reports"), 504),
+        (Unauthenticated("reports"), 401),
     ],
 )
 def test_a_status_read_during_an_outage_says_why_and_leaves_the_report_alone(tmp_path, error, status):
@@ -151,10 +151,10 @@ def test_a_job_link_outside_the_approved_path_is_withheld(tmp_path):
     assert OFF_PATH not in response.text + json.dumps(status)
 
 
-@pytest.mark.xfail(strict=True, reason=OFF_PATH_LINKS)
-def test_a_link_outside_the_approved_path_is_never_returned(tmp_path):
+def test_a_link_outside_the_approved_path_is_never_returned(tmp_path, warnings):
     reports = RecordingReports()
     reports.link = OFF_PATH
+    ticket = {"site_id": "site-a", "summary": "Display offline", "steps_tried": "Checked power"}
     schedule = {
         "site_id": "site-a",
         "report_type": "temperature-log",
@@ -163,14 +163,22 @@ def test_a_link_outside_the_approved_path_is_never_returned(tmp_path):
         "recipients": ["operations@example.com"],
         "start_date": (date.today() + timedelta(days=1)).isoformat(),
     }
-    with app(tmp_path, reports) as client:
+    with app(tmp_path, reports, support=OffPathSupport()) as client:
         headers = login(client)
         report = reply(client, headers, REPORT)["actions"][0]["id"]
         scheduled = reply(client, headers, "/schedule " + json.dumps(schedule))["actions"][0]["id"]
+        request = reply(client, headers, "/ticket " + json.dumps(ticket))["actions"][0]["id"]
+        confirmed = [submit(client, headers, action) for action in (report, scheduled, request)]
         returned = [
-            submit(client, headers, report).text,
-            submit(client, headers, scheduled).text,
+            *(response.text for response in confirmed),
             client.get(f"/api/actions/{scheduled}/status", headers=headers).text,
             json.dumps(reply(client, headers, f"/status {scheduled}")),
         ]
-    assert [OFF_PATH in text for text in returned] == [False] * 4
+    # The service accepted each request, so it stands; only the link is withheld.
+    assert [(response.status_code, response.json()["url"]) for response in confirmed] == [(200, "")] * 3
+    assert [OFF_PATH in text for text in returned] == [False] * 5
+    assert stored(tmp_path, scheduled)["result"] and OFF_PATH not in stored(tmp_path, scheduled)["result"]
+    withheld = [entry for entry in warnings if getattr(entry, "event", "") == "unapproved_link"]
+    assert [entry.action_kind for entry in withheld] == ["report", "scheduled_report", "ticket"]
+    assert all(entry.correlation_id for entry in withheld)
+    assert not any(OFF_PATH in entry.getMessage() + json.dumps(entry.__dict__, default=str) for entry in withheld)

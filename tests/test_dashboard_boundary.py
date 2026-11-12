@@ -16,10 +16,6 @@ from alsense_chat.tools import Context
 DASHBOARD = ("Open the alarms dashboard", "Filter critical and high alarms")
 REPORT = "Create a temperature report for Demo North for the last seven days"
 CLAIMED = re.compile(r"\b(?:opened|filtered|applied)\b", re.IGNORECASE)
-GUARD_GAP = (
-    "Finding: the reply guard's CLAIM pattern covers created, scheduled, submitted, sent and set up, but not opened, "
-    "filtered or applied, so it releases these claims although no tool can open or filter anything."
-)
 
 
 def evidence(tmp_path) -> tuple[Context, dict]:
@@ -74,7 +70,6 @@ def test_a_model_call_to_a_dashboard_tool_is_refused(tmp_path, monkeypatch):
     assert (answer["status"], answer["actions"], answer["sources"]) == ("out_of_scope", [], [])
 
 
-@pytest.mark.xfail(strict=True, reason=GUARD_GAP)
 @pytest.mark.parametrize(
     "text",
     [
@@ -82,6 +77,9 @@ def test_a_model_call_to_a_dashboard_tool_is_refused(tmp_path, monkeypatch):
         "I have filtered the alarms to critical and high.",
         "The critical and high filter is now applied.",
         "The alarms dashboard is now open.",
+        "I applied the critical filter to the alarm view.",
+        "The alarm list for Demo North has been filtered to critical and high.",
+        "Done! I've switched to the alarms view.",
     ],
 )
 def test_the_reply_guard_refuses_a_claim_that_the_dashboard_was_opened_or_filtered(tmp_path, text):
@@ -96,8 +94,12 @@ def test_the_reply_guard_refuses_a_claim_that_the_dashboard_was_opened_or_filter
         "Check whether the door was opened during the alarm.",
         "If the cabinet door was opened, close it and wait for the temperature to recover.",
         "Check that the filter is clean.",
+        "The alarm shows the door has been opened for too long.",
+        "Make sure the filter has been applied before you compare the readings.",
+        "Open the alarms dashboard and filter by severity to see critical and high alarms.",
+        "I have not filtered the alarms.",
     ],
 )
-def test_the_reply_guard_releases_guidance_about_doors_and_filters(tmp_path, text):
+def test_the_reply_guard_releases_guidance_and_denials(tmp_path, text):
     ctx, sources = evidence(tmp_path)
     assert guard(json.dumps({"status": "answer", "text": text, "source_ids": [sources["docs"]]}), ctx).text == text

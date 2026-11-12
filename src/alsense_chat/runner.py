@@ -44,6 +44,21 @@ CLAIM = re.compile(
     re.IGNORECASE,
 )
 NEGATIONS = {"no", "not", "nothing", "never", "none", "neither", "nor"}
+# The assistant can't operate the app's screens: no tool opens, filters or applies anything there. A reply may tell
+# the user how to do it, never say it was done. Doors and filters in the equipment stay out of this.
+INTERFACE = r"(?:dashboards?|views?|filters?|pages?|tabs?|screens?|alarm\s+lists?|alarms)"
+INTERFACE_CLAIM = re.compile(
+    rf"\b(?:I|we)(?:['’]ve|\s+have)?\s+(?:(?:just|now|already|gone\s+ahead\s+and)\s+)*"
+    rf"(?:opened|filtered|applied|switched|navigated)\b[^.!?\n]{{0,40}}?\b{INTERFACE}\b"
+    rf"|\b{INTERFACE}(?:\s+(?:for|of|on|in|at)\s+[\w’'-]+(?:\s+[\w’'-]+){{0,3}})?\s+"
+    r"(?:(?:is|are)\s+now\s+(?:open|opened|filtered|applied)|(?:was|were)\s+(?:now\s+)?(?:opened|filtered|applied)"
+    r"|(?:has|have)\s+(?:now\s+)?been\s+(?:opened|filtered|applied))\b",
+    re.IGNORECASE,
+)
+# Guidance tells the user what to check or do, such as "Make sure the filter has been applied": it claims nothing.
+GUIDANCE = re.compile(
+    r"\b(?:make\s+sure|ensure|check|verify|if|when|whether|once|until|before|after|unless)\b", re.IGNORECASE
+)
 # "...is created once you press Confirm" describes what will happen, not what happened.
 CONDITION = (
     r"(?:only\s+)?(?:once|after|when|if|until|before|as\s+soon\s+as)\s+you\s+(?:press|confirm|review|click|approve)\b"
@@ -72,6 +87,16 @@ def claim(text: str) -> str | None:
         if re.search(CONDITION, sentence, re.IGNORECASE) or re.match(rf"\s*{CONDITION}", text[match.end() :], re.I):
             continue
         return match.group(0)
+    return None
+
+
+def interface_claim(text: str) -> str | None:
+    """The first wording that says something was opened, filtered or applied in the app, outside guidance."""
+    for match in INTERFACE_CLAIM.finditer(text):
+        sentence = text[: match.start()]
+        sentence = sentence[max(sentence.rfind(mark) for mark in ".!?\n") + 1 :]
+        if not GUIDANCE.search(sentence):
+            return match.group(0)
     return None
 
 
@@ -115,6 +140,8 @@ def _checked(raw: str, ctx: Context) -> Reply:
         raise ValueError("Number absent from tool evidence.")
     if ctx.actions and re.search(r"\b(submitted|sent|created successfully)\b", reply.text, re.IGNORECASE):
         raise ValueError("A draft has not been submitted.")
+    if interface_claim(reply.text):
+        raise ValueError("The assistant can't open, filter or apply anything in the app.")
     if claim(reply.text) and (ctx.actions or not confirmed_by_service(ctx)):
         raise ValueError("Only a result the service confirmed can be reported as created, scheduled or sent.")
     return reply
@@ -547,8 +574,9 @@ class FoundryRunner:
                             "content": "Your reply failed validation. Return the required "
                             "JSON, reference this turn's evidence, use no unsupported numbers or links, "
                             "never show internal ids, tenant ids or tool names (use display names), "
-                            "and never say a draft was created, scheduled or sent unless get_report_status "
-                            "confirmed it. Otherwise return not_in_data.",
+                            "never say a draft was created, scheduled or sent unless get_report_status "
+                            "confirmed it, and never say you opened, filtered or applied anything in the app: "
+                            "you can't. Otherwise return not_in_data.",
                         }
                     )
                     continue
