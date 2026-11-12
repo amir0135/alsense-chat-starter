@@ -247,6 +247,39 @@ cases:
       error_category: invalid_input
       confirmation_required: false
 
+  - name: report_period_ends_in_the_future
+    description: The backend refuses a period that ends after today even when the form is bypassed.
+    question: '/report {"site_id":"site-a","report_type":"alarm-history","format":"pdf","start":"2099-01-01","end":"2099-01-31"}'
+    expected:
+      result: clarification
+      error_category: invalid_input
+      confirmation_required: false
+      text_includes: ["The period can't end after today."]
+      must_not: [submit]
+
+  - name: future_report_period_is_asked_again
+    description: >
+      Asked in plain language, a period that ends after today is refused too: the user is asked to correct it
+      and no draft is prepared.
+    question: Create an alarm history report for Store North from 2099-01-01 to 2099-01-31.
+    context:
+      user: alice
+      sites: [Store North, Store South]
+    expected:
+      allowed_tools: [get_permitted_sites, list_report_types, prepare_report]
+      clarification_required: true
+      confirmation_required: false
+      result: clarification
+      text_includes: ["The period can't end after today."]
+      domains: [sites, reporting]
+      must_not:
+        - submit
+        - invent_report_type
+        - use_unauthorized_site
+        - guess_site_id
+        - claim_without_confirmation
+        - offer_unrelated_tools
+
   - name: report_unknown_format
     description: Only the formats the report type offers are accepted.
     question: '/report {"site_id":"site-a","report_type":"site-status","format":"xlsx","start":"2026-01-01","end":"2026-01-31"}'
