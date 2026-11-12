@@ -124,7 +124,8 @@ requests by event, errors by category, latency and tokens per user. The cost is 
 the model prices are configured (`MODEL_PRICE_INPUT`, `MODEL_PRICE_CACHED_INPUT` and `MODEL_PRICE_OUTPUT`, US
 dollars per million tokens; none are shipped): uncached input, cached input and output tokens times their price,
 reasoning being part of the output. The report shows it per user and in total, and each chat request's log line
-carries its own estimate as `estimated_cost_usd`. Nothing limits usage yet; a quota would be enforced at the start
+carries its own estimate as `estimated_cost_usd`. `/system` and the doctor show the configured rates, or that the
+cost is not configured. Nothing limits usage yet; a quota would be enforced at the start
 of `POST /api/chat`.
 
 SQLite supports one local instance and survives process restarts. The schema is versioned with

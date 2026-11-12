@@ -13,6 +13,14 @@ param modelDeployment string = 'gpt-6.1-terra'
 @minValue(1)
 param modelCapacity int = 250
 
+// The model prices for the app's estimated cost. Strings, since Bicep has no decimal type; empty means not set.
+@description('US dollars per million input tokens.')
+param modelPriceInput string = ''
+@description('US dollars per million cached input tokens.')
+param modelPriceCachedInput string = ''
+@description('US dollars per million output tokens, reasoning included.')
+param modelPriceOutput string = ''
+
 @secure()
 @minLength(32)
 param demoAccessCode string
@@ -41,6 +49,9 @@ module resources './resources.bicep' = {
     modelVersion: modelVersion
     modelDeployment: modelDeployment
     modelCapacity: modelCapacity
+    modelPriceInput: modelPriceInput
+    modelPriceCachedInput: modelPriceCachedInput
+    modelPriceOutput: modelPriceOutput
     demoAccessCode: demoAccessCode
     imageTag: imageTag
     tags: group.tags

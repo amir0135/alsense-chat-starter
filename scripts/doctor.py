@@ -205,6 +205,21 @@ def check_mode(report: Report, settings) -> None:
         report.add("warn", f"Synthetic faults on for every session: {', '.join(sorted(settings.synthetic_faults))}")
 
 
+def check_prices(report: Report, settings) -> None:
+    from alsense_chat.usage import SETTINGS
+
+    rates = settings.prices
+    if rates is not None:
+        report.add("ok", f"Estimated cost at US dollars per million tokens: {rates.describe()}")
+    elif (settings.price_input, settings.price_cached_input, settings.price_output) == (None, None, None):
+        report.add(
+            "info",
+            "Estimated cost: not configured",
+            f"Set {SETTINGS} in .env, in US dollars per million tokens, to estimate it.",
+        )
+    # A partial set is already reported as a configuration problem.
+
+
 def check_flows(report: Report, settings):
     from alsense_chat.flows import FlowError, available, load_flows
 
@@ -345,6 +360,7 @@ def main(argv: list[str]) -> int:
         if settings is not None:
             port = settings.app_port
             check_mode(report, settings)
+            check_prices(report, settings)
             flows = check_flows(report, settings)
             check_scenarios(report, settings, flows)
             check_database(report, settings)

@@ -5,6 +5,9 @@ param modelName string
 param modelVersion string
 param modelDeployment string
 param modelCapacity int
+param modelPriceInput string
+param modelPriceCachedInput string
+param modelPriceOutput string
 @secure()
 param demoAccessCode string
 param imageTag string
@@ -15,6 +18,15 @@ var acrPullRole = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 var secretUserRole = '4633458b-17de-408a-b874-0445c86b69e6'
 var foundryUserRole = '53ca6127-db72-4b80-b1b0-d745d6d5456d'
 var openAiUserRole = '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
+// Only the prices that were given become variables: without them the app shows the cost as not configured.
+var modelPrices = filter(
+  [
+    { name: 'MODEL_PRICE_INPUT', value: modelPriceInput }
+    { name: 'MODEL_PRICE_CACHED_INPUT', value: modelPriceCachedInput }
+    { name: 'MODEL_PRICE_OUTPUT', value: modelPriceOutput }
+  ],
+  price => !empty(price.value)
+)
 
 resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: 'id-${environmentName}'
@@ -197,7 +209,7 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = if (!empty(imageTag)) {
         name: 'chat'
         image: '${registry.properties.loginServer}/alsense-chat:${imageTag}'
         resources: { cpu: json('0.5'), memory: '1Gi' }
-        env: [
+        env: concat([
           { name: 'CLOUD_DEMO', value: 'true' }
           { name: 'DEMO_LOGIN', value: 'true' }
           { name: 'DEMO_ACCESS_CODE', secretRef: 'demo-access-code' }
@@ -209,7 +221,7 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = if (!empty(imageTag)) {
           { name: 'AZURE_CLIENT_ID', value: identity.properties.clientId }
           { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: insights.properties.ConnectionString }
           { name: 'OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT', value: 'false' }
-        ]
+        ], modelPrices)
         probes: [
           { type: 'Startup', httpGet: { path: '/api/health', port: 8001 }, periodSeconds: 5, failureThreshold: 36 }
           { type: 'Readiness', httpGet: { path: '/api/health', port: 8001 }, periodSeconds: 10 }

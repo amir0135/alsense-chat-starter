@@ -113,6 +113,26 @@ def test_doctor_reports_bad_flow_files_instead_of_crashing(tmp_path):
     assert report.failed and "start must name a node" in report.render()
 
 
+def test_doctor_shows_the_model_prices_or_that_the_cost_is_not_configured():
+    doctor = load("scripts/doctor.py")
+    from alsense_chat.config import Settings
+
+    shown = []
+    for settings in (Settings(), Settings(price_input=1.25, price_cached_input=0.125, price_output=10.0)):
+        report = doctor.Report()
+        doctor.check_prices(report, settings)
+        shown += report.lines
+    assert shown == [
+        (
+            "info",
+            "Estimated cost: not configured",
+            "Set MODEL_PRICE_INPUT, MODEL_PRICE_CACHED_INPUT and MODEL_PRICE_OUTPUT in .env, in US dollars per "
+            "million tokens, to estimate it.",
+        ),
+        ("ok", "Estimated cost at US dollars per million tokens: input 1.25, cached input 0.125, output 10", ""),
+    ]
+
+
 def test_doctor_falls_back_to_ascii_marks(monkeypatch):
     doctor = load("scripts/doctor.py")
     report = doctor.Report()
