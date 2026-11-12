@@ -200,7 +200,7 @@ uv run python scripts/dev.py evals     # behaviour cases in evals/ only, a pass/
 uv run python scripts/dev.py validate-flows [FILE ...]
 uv run python scripts/dev.py latency   # per-stage request timings the local demo recorded (p50, p95, max)
 uv run python scripts/dev.py feedback  # answer KPI and ratings with their context, never question or answer text
-uv run python scripts/dev.py usage     # requests, errors, latency and model tokens per user (no cost, no quota)
+uv run python scripts/dev.py usage     # requests, errors, latency, tokens and estimated cost per user (no quota)
 uv run python scripts/dev.py measure   # measured run of the sample flows, then the latency and usage reports
 ```
 

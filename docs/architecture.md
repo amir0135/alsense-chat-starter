@@ -118,9 +118,12 @@ made (failed ones included), how many reported token usage and the tokens they r
 cached input and reasoning; zero calls for the scripted assistant). Model spans carry `gen_ai.usage.input_tokens`
 and `gen_ai.usage.output_tokens`, and each request's log line carries the user id, error category, model calls
 and token counts as Application Insights custom dimensions. `uv run python scripts/dev.py usage` summarizes
-requests by event, errors by category, latency and tokens per user. Cost is not calculated because the starter
-has no approved price source: cost is tokens times the approved rate for the deployment, from a source the
-owners choose. Nothing limits usage yet; a quota would be enforced at the start of `POST /api/chat`.
+requests by event, errors by category, latency and tokens per user. The cost is only estimated, and only when
+the model prices are configured (`MODEL_PRICE_INPUT`, `MODEL_PRICE_CACHED_INPUT` and `MODEL_PRICE_OUTPUT`, US
+dollars per million tokens; none are shipped): uncached input, cached input and output tokens times their price,
+reasoning being part of the output. The report shows it per user and in total, and each chat request's log line
+carries its own estimate as `estimated_cost_usd`. Nothing limits usage yet; a quota would be enforced at the start
+of `POST /api/chat`.
 
 SQLite supports one local instance and survives process restarts. The schema is versioned with
 `PRAGMA user_version` and migrated in place at startup. It is not a shared cloud session store. A real

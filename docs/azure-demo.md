@@ -64,7 +64,8 @@ The Foundry deployment uses its Azure default content-filter configuration; an e
 integration and APIM policies are not implemented. No Search, Cosmos DB or APIM is created merely as a placeholder.
 
 Costs include the registry, container replica, model usage (input and output tokens, reasoning included),
-monitoring and Key Vault operations. The logging
+monitoring and Key Vault operations. `dev.py usage` estimates the model cost per user once you set the model prices
+([HANDOVER](HANDOVER.md#estimating-model-cost)). The logging
 workspace has a daily ingestion cap, but it is **not a subscription spending cap**. Idle resources still cost
 money. Inspect Cost Management and remove your demo when finished. Key Vault purge protection retains a deleted
 vault for its retention interval; you cannot immediately reuse its name after deletion.

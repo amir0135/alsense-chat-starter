@@ -14,7 +14,7 @@ Tasks:
     evals           Run the evaluation cases in evals/ (add --mode model, or folders such as evals/local)
     latency         Summarize the recorded request timings per stage (p50, p95, max). Add --db PATH, --limit N
     feedback        Answer KPI and ratings, no question or answer text. Add --since DAYS, --rating up|down, --json
-    usage           Requests, errors, latency and model tokens per user. Add --since DAYS, --user ID, --json
+    usage           Requests, errors, latency, tokens and estimated cost per user. Add --since DAYS, --user ID, --json
     measure         Run the proxy flows in-process, then print the latency and usage reports. Add --runs N, --db PATH
     fixtures        Regenerate the contract fixtures and JSON Schemas in fixtures/
     export          Write a history-free zip of the starter to dist/

@@ -93,7 +93,7 @@ def main(argv: list[str] | None = None) -> int:
         print()
         label = args.db or "this run's temporary database"
         print(timing.report(timing.read(db, 100_000), label))
-        print(usage.render(usage.summarize(usage.read(db, 0.0, None)), label, None))
+        print(usage.render(usage.report(usage.read(db, 0.0, None), settings.prices), label))
     return 0
 
 

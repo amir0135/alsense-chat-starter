@@ -109,14 +109,15 @@ uv run python scripts/dev.py evals    # only the evaluation cases, with a pass/f
 uv run python scripts/dev.py evals --mode model evals/local   # your own cases against the Foundry model
 uv run python scripts/dev.py latency  # per-stage timings of the requests the local demo recorded
 uv run python scripts/dev.py feedback # answer KPI and ratings with their context, never question or answer text
-uv run python scripts/dev.py usage    # requests, errors, latency and model tokens per user (no cost, no quota)
+uv run python scripts/dev.py usage    # requests, errors, latency, tokens and estimated cost per user (no quota)
 uv run python scripts/dev.py measure  # measured run of the sample flows, then the latency and usage reports
 ```
 
 CI runs the same checks, plus the Docker smoke test, the Dev Container build and secret scans. `latency`,
 `feedback` and `usage` read the demo database (`--db PATH`; `latency` and `feedback` take `--limit N`,
-`feedback` `--rating up|down`, `usage` `--user ID`, `feedback` and `usage` `--since DAYS`, and all three
-`--json`); [`architecture.md`](architecture.md) describes what each one reports.
+`feedback` `--rating up|down`, `usage` `--user ID` and `--price-input`, `--price-cached-input` and
+`--price-output`, `feedback` and `usage` `--since DAYS`, and all three `--json`);
+[`architecture.md`](architecture.md) describes what each one reports.
 
 ## Reading answer feedback
 
@@ -137,6 +138,21 @@ rated helpful divided by the answers given, for answers given in the last 30 day
 Breakdowns by assistant (scripted, model, guided) and by routed domains follow, then the ratings themselves.
 `--json` prints the same as one document. The review reads the audit trail and the ratings only, never the
 conversation.
+
+## Estimating model cost
+
+The starter ships no prices, so `dev.py usage` shows the estimated cost as "not configured" until you set
+`MODEL_PRICE_INPUT`, `MODEL_PRICE_CACHED_INPUT` and `MODEL_PRICE_OUTPUT` in `.env`: US dollars per million
+tokens, from the Azure OpenAI pricing page for your deployment's model, deployment type and region (Data Zone,
+Global and Regional prices differ). Then it shows the estimated cost per user and in total, and each chat request's
+log line carries its estimate as `estimated_cost_usd`.
+
+> estimated cost = (input − cached input) × input price + cached input × cached input price + output × output price
+
+Reasoning tokens are part of the output tokens and are not counted again. Calls that reported no usage are left
+out and counted, so the estimate is a lower bound when there are any. `--price-input`, `--price-cached-input` and
+`--price-output` re-estimate recorded usage at other prices without changing `.env`. The bill can differ: it
+depends on the agreement, discounts and how the service rounds, so treat this as a guide, not an invoice.
 
 ## Measuring model latency
 

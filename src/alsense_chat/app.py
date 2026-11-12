@@ -28,6 +28,7 @@ from .scenarios import load_scenarios, unavailable_reason
 from .store import DuplicateRecord, MissingRecord, Store
 from .timing import Timings
 from .tools import FEATURE_OFF, Context, check_registry
+from .usage import Prices
 
 log = logging.getLogger(__name__)
 bearer = HTTPBearer(auto_error=False)
@@ -153,7 +154,7 @@ def context(request: Request, credentials: Annotated[HTTPAuthorizationCredential
 
 
 def log_request(
-    ctx: Context, event: str, outcome: str, error: str | None, timings: dict, assistant: str = "", **numbers: int
+    ctx: Context, event: str, outcome: str, error: str | None, timings: dict, assistant: str = "", **numbers: float
 ) -> None:
     """One line per request. Its extra fields become Application Insights custom dimensions.
 
@@ -182,7 +183,7 @@ def log_request(
     )
 
 
-def audit_reply(ctx: Context, reply: dict | None) -> None:
+def audit_reply(ctx: Context, reply: dict | None, rates: Prices | None = None) -> None:
     flow = (reply or {}).get("flow") or {}
     error = (reply or {}).get("error") or {}
     status = (reply or {}).get("status", "")
@@ -216,7 +217,9 @@ def audit_reply(ctx: Context, reply: dict | None) -> None:
         answer_id=(reply or {}).get("answer_id"),
         usage=usage,
     )
-    log_request(ctx, event, outcome, error_category, timings, ctx.assistant, **usage)
+    # An estimate from the configured prices, logged only: the audit keeps the token counts it comes from.
+    cost = {"estimated_cost_usd": round(rates.estimate(usage), 6)} if rates else {}
+    log_request(ctx, event, outcome, error_category, timings, ctx.assistant, **usage, **cost)
 
 
 def create_app(settings: Settings | None = None, services: Services | None = None) -> FastAPI:
@@ -431,7 +434,7 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
                 yield 'event: error\ndata: {"message":"The run failed. Check the backend log and retry."}\n\n'
             finally:
                 ctx.timings.mark("total")
-                audit_reply(ctx, reply)
+                audit_reply(ctx, reply, settings.prices)
 
         return StreamingResponse(events(), media_type="text/event-stream", headers={"Cache-Control": "no-store"})
 
