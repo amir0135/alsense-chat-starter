@@ -120,7 +120,7 @@ def test_a_rating_survives_a_restart_and_can_still_change(tmp_path, capsys):
     assert (after["answer_id"], after["rating"], after["reason"]) == (answer_id, "up", None)
     assert after["created"] == before["created"] and after["updated"] >= before["updated"]
     assert feedback.main(["--db", str(tmp_path / "test.sqlite3"), "--json"]) == 0
-    [reviewed] = json.loads(capsys.readouterr().out)
+    [reviewed] = json.loads(capsys.readouterr().out)["ratings"]
     assert (reviewed["answer_id"], reviewed["rating"], reviewed["reason"]) == (answer_id, "up", None)
 
 
@@ -274,7 +274,7 @@ def test_the_review_lists_ratings_with_their_context_and_no_text(tmp_path, capsy
     for text in (SITES, REPORT, sites["text"], report["text"]):
         assert text not in out
     assert feedback.main(["--db", path, "--rating", "down", "--json"]) == 0
-    [row] = json.loads(capsys.readouterr().out)
+    [row] = json.loads(capsys.readouterr().out)["ratings"]
     assert (row["rating"], row["reason"], row["status"], row["data_source"]) == (
         "down",
         "too_slow",
@@ -283,3 +283,113 @@ def test_the_review_lists_ratings_with_their_context_and_no_text(tmp_path, capsy
     )
     assert row["answer_id"] == report["answer_id"] and row["total_ms"] > 0 and row["correlation_id"]
     assert feedback.main(["--db", str(tmp_path / "missing.sqlite3")]) == 1
+
+
+def kpi_run(tmp_path, monkeypatch) -> dict:
+    """Answers of each kind, rated or not, a guided-check step and the menu (not answers) and one failed run."""
+    real = alsense_chat.app.demo_run
+
+    def flaky(message, ctx):
+        if message == "Break this run":
+            raise RuntimeError("The run broke.")
+        yield from real(message, ctx)
+
+    monkeypatch.setattr(alsense_chat.app, "demo_run", flaky)
+    with app_client(tmp_path) as client:
+        headers = login(client)
+        answers = {
+            "sites": reply(client, headers, SITES),
+            "report": reply(client, headers, REPORT),
+            "clarification": reply(client, headers, "Create a report for Demo North"),
+            "waiting": flow(client, headers, []),
+            "outcome": flow(client, headers, ["no", "Demo North"]),
+            "menu": reply(client, headers, "/flows"),
+            "unrated": reply(client, headers, SITES),
+        }
+        assert client.post("/api/chat", headers=headers, json={"message": "Break this run"}).text.startswith(
+            "event: error"
+        )
+        for name, body in (
+            ("sites", {"rating": "up"}),
+            ("report", {"rating": "down", "reason": "incorrect"}),
+            ("clarification", {"rating": "down"}),
+            ("outcome", {"rating": "up"}),
+        ):
+            assert rate(client, headers, answers[name]["answer_id"], **body).status_code == 200
+    return answers
+
+
+def test_the_kpi_counts_satisfied_answers_against_answers_given(tmp_path, monkeypatch, capsys):
+    answers = kpi_run(tmp_path, monkeypatch)
+    path = str(tmp_path / "test.sqlite3")
+    assert feedback.main(["--db", path, "--json"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["kpi"] == {
+        "answers_given": 5,
+        "helpful": 2,
+        "satisfied_rate": 0.4,
+        "rated": 4,
+        "rated_share": 0.8,
+        "helpful_share_of_rated": 0.5,
+        "not_helpful": {
+            "total": 2,
+            "by_reason": {"incorrect": 1, "incomplete": 0, "too_slow": 0, "other": 0, "no_reason": 1},
+        },
+        "failed_without_answer": 1,
+    }
+    assert {
+        name: (kpi["answers_given"], kpi["helpful"], kpi["failed_without_answer"])
+        for name, kpi in report["by_assistant"].items()
+    } == {"guided": (1, 1, 0), "scripted": (4, 1, 1)}
+    domains = report["by_domains"]
+    assert sum(kpi["answers_given"] for kpi in domains.values()) == 5
+    assert (domains["sites"]["answers_given"], domains["sites+reporting"]["not_helpful"]["total"]) == (2, 2)
+    assert report["definition"] == list(feedback.DEFINITION) and report["period"] == {"days": None, "from": None}
+    # The audit trail counts exactly the replies the feedback endpoint accepts as answers.
+    with store(tmp_path).connection() as db:
+        turns = db.execute("SELECT answer_id, reply FROM turns").fetchall()
+    rateable = {turn["answer_id"] for turn in turns if feedback.rateable(json.loads(turn["reply"]))}
+    counted = feedback.counted(feedback.read_requests(path, 0.0))
+    assert {row["answer_id"] for row in counted if feedback.answered(row)} == rateable
+    assert answers["waiting"]["answer_id"] not in rateable and answers["menu"]["answer_id"] not in rateable
+
+    assert feedback.main(["--db", path]) == 0
+    out = capsys.readouterr().out
+    assert "  KPI                40.0% (2 of 5)" in out and "  failed, no answer  1 (not part of the KPI)" in out
+    assert "(incorrect 1, incomplete 0, too slow 0, other 0, no reason 1)" in out
+    assert "KPI, satisfied answers = helpful / answers given." in out
+    assert "Ratings: 4 shown (2 up, 2 down), newest first." in out
+    for answer in answers.values():
+        assert answer["text"] not in out
+    for text in (SITES, REPORT, "Create a report for Demo North", "Break this run"):
+        assert text not in out
+
+
+def test_the_kpi_period_is_when_the_answer_was_given(tmp_path, capsys):
+    with app_client(tmp_path) as client:
+        headers = login(client)
+        old, recent = reply(client, headers, SITES), reply(client, headers, REPORT)
+        assert rate(client, headers, old["answer_id"], rating="up").status_code == 200
+        assert rate(client, headers, recent["answer_id"], rating="down", reason="too_slow").status_code == 200
+    with store(tmp_path).connection() as db:
+        db.execute("UPDATE audit SET created = created - 10 * 86400 WHERE answer_id = ?", (old["answer_id"],))
+    path = str(tmp_path / "test.sqlite3")
+
+    def review(*args: str) -> dict:
+        assert feedback.main(["--db", path, "--json", *args]) == 0
+        return json.loads(capsys.readouterr().out)
+
+    everything, week = review(), review("--since", "7")
+    assert (everything["kpi"]["answers_given"], everything["kpi"]["helpful"]) == (2, 1)
+    assert (week["kpi"]["answers_given"], week["kpi"]["helpful"], week["kpi"]["satisfied_rate"]) == (1, 0, 0.0)
+    assert [row["answer_id"] for row in week["ratings"]] == [recent["answer_id"]]
+    assert week["period"]["days"] == 7 and week["period"]["from"]
+    with store(tmp_path).connection() as db:
+        db.execute("UPDATE audit SET created = created - 10 * 86400 WHERE answer_id = ?", (recent["answer_id"],))
+    empty = review("--since", "1")
+    assert (empty["kpi"]["answers_given"], empty["kpi"]["satisfied_rate"], empty["ratings"]) == (0, None, [])
+    assert feedback.main(["--db", path, "--since", "1"]) == 0
+    out = capsys.readouterr().out
+    assert "  KPI                n/a (0 of 0)" in out and "By assistant" not in out
+    with pytest.raises(SystemExit):
+        feedback.main(["--db", path, "--since", "0"])

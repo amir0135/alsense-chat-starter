@@ -13,7 +13,7 @@ Tasks:
     validate-flows  Validate the shipped flows and FLOWS_FILE, or the files you name
     evals           Run the evaluation cases in evals/ (add --mode model, or folders such as evals/local)
     latency         Summarize the recorded request timings per stage (p50, p95, max). Add --db PATH, --limit N
-    feedback        Review answer ratings, without question or answer text. Add --rating up|down, --limit N, --json
+    feedback        Answer KPI and ratings, no question or answer text. Add --since DAYS, --rating up|down, --json
     usage           Requests, errors, latency and model tokens per user. Add --since DAYS, --user ID, --json
     measure         Run the proxy flows in-process, then print the latency and usage reports. Add --runs N, --db PATH
     fixtures        Regenerate the contract fixtures and JSON Schemas in fixtures/
@@ -249,7 +249,7 @@ def main(argv: list[str]) -> int:
     command.set_defaults(run=validate_flows)
     tasks.add_parser("evals", help="run the evaluation cases").set_defaults(run=evals)
     tasks.add_parser("latency", help="per-stage request timings of the local demo").set_defaults(run=latency)
-    tasks.add_parser("feedback", help="review answer ratings (no question or answer text)").set_defaults(run=feedback)
+    tasks.add_parser("feedback", help="answer KPI and ratings (no question or answer text)").set_defaults(run=feedback)
     tasks.add_parser("usage", help="requests, errors, latency and tokens per user").set_defaults(run=usage)
     tasks.add_parser("measure", help="measured run of the proxy flows with reports").set_defaults(run=measure)
     tasks.add_parser("fixtures", help="regenerate contract fixtures").set_defaults(run=fixtures)

@@ -105,7 +105,11 @@ code or the loaded flows define; anything else is stored as "other", a tool name
 "unknown", and a tool result keeps only its kind and a count or known state, never an upstream detail. It never
 holds the question, the answer text, sources, guided-check answers or free text; those stay in the session's
 turns, which the review does not read. A rating is accepted once the answer's request is recorded, which the
-widget waits for. `uv run python scripts/dev.py feedback` lists the ratings, newest first. Audit records now
+widget waits for. `uv run python scripts/dev.py feedback` reports the initial KPI, satisfied answers: answers
+rated helpful ÷ answers given, where answers given are the stored replies that can be rated, read from the chat
+and guided-check audit records by their answer id. Unrated answers count as not satisfied, so the rated share,
+the helpful share of rated answers and the not-helpful reasons come with it; runs that ended without a stored
+answer are counted apart. It then lists the ratings, newest first. Audit records now
 also carry the app version and data source that produced them, and a chat record the answer id of its reply.
 
 Usage is recorded per authenticated user on the same audit records: the event (requests), the error category,

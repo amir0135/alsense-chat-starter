@@ -108,15 +108,35 @@ uv run python scripts/dev.py lint     # formatting, lint, types, JavaScript, pro
 uv run python scripts/dev.py evals    # only the evaluation cases, with a pass/fail line per case
 uv run python scripts/dev.py evals --mode model evals/local   # your own cases against the Foundry model
 uv run python scripts/dev.py latency  # per-stage timings of the requests the local demo recorded
-uv run python scripts/dev.py feedback # answer ratings with their context, never question or answer text
+uv run python scripts/dev.py feedback # answer KPI and ratings with their context, never question or answer text
 uv run python scripts/dev.py usage    # requests, errors, latency and model tokens per user (no cost, no quota)
 uv run python scripts/dev.py measure  # measured run of the sample flows, then the latency and usage reports
 ```
 
 CI runs the same checks, plus the Docker smoke test, the Dev Container build and secret scans. `latency`,
 `feedback` and `usage` read the demo database (`--db PATH`; `latency` and `feedback` take `--limit N`,
-`feedback` `--rating up|down`, `usage` `--since DAYS` and `--user ID`, and both `--json`);
-[`architecture.md`](architecture.md) describes what each one reports.
+`feedback` `--rating up|down`, `usage` `--user ID`, `feedback` and `usage` `--since DAYS`, and all three
+`--json`); [`architecture.md`](architecture.md) describes what each one reports.
+
+## Reading answer feedback
+
+`uv run python scripts/dev.py feedback --since 30` starts with the initial KPI, **satisfied answers**: the answers
+rated helpful divided by the answers given, for answers given in the last 30 days (all recorded answers without
+`--since`).
+
+- **Answers given:** chat replies and guided-check outcomes stored with an answer id that can be rated: answers,
+  clarifications, refusals and error replies. Not the menu of checks, and not guided-check steps that still wait
+  for an answer.
+- **Rated helpful:** answers whose latest rating is Helpful. A rating counts with its answer, whenever it was given.
+- **Unrated answers** count as not satisfied, so read the KPI with the **rated share** (rated ÷ answers given) and
+  the **helpful share of rated answers**.
+- **Not helpful** answers are split by the reason chosen: incorrect, incomplete, too slow, other or none.
+- **Failed runs** ended without a stored answer, after an unexpected error. They are counted separately and are not
+  part of the KPI.
+
+Breakdowns by assistant (scripted, model, guided) and by routed domains follow, then the ratings themselves.
+`--json` prints the same as one document. The review reads the audit trail and the ratings only, never the
+conversation.
 
 ## Measuring model latency
 
