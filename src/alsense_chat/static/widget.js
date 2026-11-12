@@ -107,8 +107,9 @@ const REPORT_NOTES = {
 const FORMAT_LABELS = { pdf: "PDF", csv: "CSV", xlsx: "Excel" };
 const FREQUENCY_LABELS = { daily: "Daily", weekly: "Weekly", monthly: "Monthly" };
 const EMAIL = /^[A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
-const STATUS_POLLS = 8;
-const STATUS_POLL_MS = 1500;
+/* A running job is checked again soon, then less often, for up to five minutes. */
+const STATUS_POLL = { first: 1500, growth: 1.5, longest: 10000, limit: 5 * 60 * 1000 };
+const followedReports = new WeakSet();
 const DEFAULT_PERIOD = "last-30";
 const PERIODS = {
   "last-7": (today) => [addDays(today, -6), today],
@@ -426,7 +427,7 @@ function renderDocuments(data, parent) {
 }
 
 /* The confirmed result: a download link with its expiry, a schedule's first run, or why there is none. */
-function renderReportResult(container, status, { live = false, synthetic = true } = {}) {
+function renderReportResult(container, status, { live = false, stopped = false, synthetic = true } = {}) {
   container.querySelector(".report-result")?.remove();
   const box = node("div", "report-result");
   const result = status?.result || {};
@@ -448,7 +449,10 @@ function renderReportResult(container, status, { live = false, synthetic = true 
     if (live) note.append(node("span", "inline-spinner"));
     note.append(document.createTextNode(live
       ? "Preparing the report. The download link appears here when it’s ready."
-      : "Still being prepared. Check again in a moment for the download link."));
+      : stopped
+        ? `Still being prepared after ${Math.round(STATUS_POLL.limit / 60000)} minutes, so it’s no longer checked `
+          + "automatically. Use Check status to look again."
+        : "Still being prepared. Check again in a moment for the download link."));
     box.append(note);
   } else if (status?.state === "failed") {
     box.append(node("p", "download-note is-failed", "The report job failed, so there’s no file to download."));
@@ -474,16 +478,42 @@ async function reportStatus(actionId) {
   return (await api(`/api/actions/${encodeURIComponent(actionId)}/status`)).json();
 }
 
-/* Shows the result as soon as the service has it; a job still running is checked again a few times. */
+function pageVisible() {
+  if (!document.hidden) return Promise.resolve();
+  return new Promise((resolve) => {
+    const shown = () => {
+      if (document.hidden) return;
+      document.removeEventListener("visibilitychange", shown);
+      resolve();
+    };
+    document.addEventListener("visibilitychange", shown);
+  });
+}
+
+/* Shows the result as soon as the service has it. A job still running is checked again, less often over time,
+   while its card stays in the conversation of the same session and the page is visible: one loop per card. It stops
+   on a result, an error (the caller shows it) or a new session, and after five minutes says so. */
 async function followReport(actionId, container, synthetic = true) {
-  for (let attempt = 0; attempt < STATUS_POLLS; attempt += 1) {
-    const status = await reportStatus(actionId);
-    const last = attempt === STATUS_POLLS - 1;
-    renderReportResult(container, status, { live: status.state === "processing" && !last, synthetic });
-    if (status.state !== "processing" || !container.isConnected) return status;
-    if (!last) await new Promise((resolve) => setTimeout(resolve, STATUS_POLL_MS));
+  if (followedReports.has(container)) return null;
+  followedReports.add(container);
+  const session = token;
+  const started = performance.now();
+  const current = () => token === session && container.isConnected;
+  try {
+    for (let delay = STATUS_POLL.first; ; delay = Math.min(delay * STATUS_POLL.growth, STATUS_POLL.longest)) {
+      const status = await reportStatus(actionId);
+      if (!current()) return null;
+      const running = status.state === "processing";
+      const again = running && performance.now() - started + delay <= STATUS_POLL.limit;
+      renderReportResult(container, status, { live: again, stopped: running && !again, synthetic });
+      if (!again) return status;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      await pageVisible();
+      if (!current()) return null;
+    }
+  } finally {
+    followedReports.delete(container);
   }
-  return null;
 }
 
 function renderHealth(data, parent) {
