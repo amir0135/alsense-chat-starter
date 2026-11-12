@@ -1361,33 +1361,44 @@ function renderSiteField(selectedId) {
   for (const label of siteAlarms.get(user.sites[0].id) || []) pill.append(node("span", "alarm-chip", label));
 }
 
-function renderReportChoices(selectedId) {
-  const container = $("report-type-options");
+/* One select however long the catalog is; the selected type's details show beneath it. */
+function renderReportTypes(selectedId) {
+  const select = $("draft-report-type");
+  select.replaceChildren(...reportTypes.map((report) => {
+    const option = new Option(report.label || "Report", report.id);
+    option.dataset.label = option.text;
+    return option;
+  }));
   const selected = reportTypes.some((item) => item.id === selectedId) ? selectedId : reportTypes[0]?.id;
-  container.replaceChildren();
-  for (const report of reportTypes) {
-    const card = node("label", "choice-card");
-    const input = node("input");
-    input.type = "radio";
-    input.name = "report_type";
-    input.value = report.id;
-    input.checked = report.id === selected;
-    const mark = node("span", "choice-mark");
-    mark.setAttribute("aria-hidden", "true");
-    const copy = node("span", "choice-copy");
-    copy.append(node("strong", "", report.label || "Report"));
-    const formats = Array.isArray(report.formats) ? report.formats.map(formatLabel).join(", ") : "";
-    const note = node("small");
-    /* These notes describe the synthetic report types. */
-    if (syntheticData && REPORT_NOTES[report.id]) {
-      note.append(document.createTextNode(`${REPORT_NOTES[report.id]}${formats ? " · " : ""}`));
-    }
-    if (formats) note.append(node("span", "nowrap", formats));
-    if (!report.schedule) note.append(node("span", "schedule-note", " · On demand only"));
-    if (note.childNodes.length) copy.append(note);
-    card.append(input, mark, copy);
-    container.append(card);
+  if (selected) select.value = selected;
+}
+
+/* The selected report type, unless it is unavailable in this mode. */
+function reportTypeValue() {
+  const select = $("draft-report-type");
+  return select.selectedOptions[0]?.disabled ? "" : select.value;
+}
+
+function describeReportType() {
+  const line = $("report-type-details");
+  line.replaceChildren();
+  const report = selectedReportType();
+  if (!report) return;
+  const parts = [];
+  /* These notes describe the synthetic report types. */
+  if (syntheticData && REPORT_NOTES[report.id]) parts.push(document.createTextNode(REPORT_NOTES[report.id]));
+  if (Array.isArray(report.formats) && report.formats.length) {
+    parts.push(node("span", "nowrap", report.formats.map(formatLabel).join(", ")));
   }
+  if (!report.schedule) parts.push(node("span", "schedule-note", "On demand only"));
+  parts.forEach((part, index) => line.append(...(index ? [document.createTextNode(" · "), part] : [part])));
+}
+
+/* The selected type decides the formats, the schedule options and the line beneath the select. */
+function syncReportType() {
+  syncFormats();
+  syncSchedule();
+  describeReportType();
 }
 
 function reportMode() {
@@ -1395,28 +1406,29 @@ function reportMode() {
 }
 
 function selectedReportType() {
-  const typeId = $("draft-form").querySelector('input[name="report_type"]:checked')?.value;
+  const typeId = reportTypeValue();
   return reportTypes?.find((item) => item.id === typeId) || null;
 }
 
-/* Scheduled mode offers only report types the service can schedule, with their frequencies and end date. */
+/* Scheduled mode offers only report types the service can schedule, with their frequencies and end date.
+   The others stay in the list, unavailable and marked "on demand only". */
 function applyMode() {
-  const form = $("draft-form");
   const scheduled = reportMode() === "scheduled";
   $("report-fields").dataset.mode = scheduled ? "scheduled" : "on-demand";
   $("period-row").hidden = scheduled;
   $("schedule-fields").hidden = !scheduled;
   for (const input of $("period-row").querySelectorAll("input")) input.disabled = scheduled;
-  const types = [...form.querySelectorAll('input[name="report_type"]')];
-  for (const input of types) {
-    input.disabled = scheduled && !reportTypes.find((item) => item.id === input.value)?.schedule;
+  const select = $("draft-report-type");
+  for (const option of select.options) {
+    const onDemandOnly = scheduled && !reportTypes.find((item) => item.id === option.value)?.schedule;
+    option.disabled = onDemandOnly;
+    option.text = onDemandOnly ? `${option.dataset.label} (on demand only)` : option.dataset.label;
   }
-  if (!types.some((input) => input.checked && !input.disabled)) {
-    const first = types.find((input) => !input.disabled);
-    if (first) first.checked = true;
+  if (select.selectedOptions[0]?.disabled) {
+    const first = [...select.options].find((option) => !option.disabled);
+    if (first) select.value = first.value;
   }
-  syncFormats();
-  syncSchedule();
+  syncReportType();
 }
 
 function syncSchedule() {
@@ -1443,7 +1455,7 @@ function syncSchedule() {
 
 function syncFormats() {
   const form = $("draft-form");
-  const typeId = form.querySelector('input[name="report_type"]:checked')?.value;
+  const typeId = reportTypeValue();
   const allowed = reportTypes?.find((item) => item.id === typeId)?.formats || ["pdf", "csv", "xlsx"];
   const inputs = [...form.querySelectorAll('input[name="format"]')];
   for (const input of inputs) input.disabled = !allowed.includes(input.value);
@@ -1469,7 +1481,7 @@ function readReportPayload() {
   const form = $("draft-form");
   return {
     site_id: form.elements.site_id.value,
-    report_type: form.querySelector('input[name="report_type"]:checked')?.value || "",
+    report_type: reportTypeValue(),
     format: form.querySelector('input[name="format"]:checked')?.value || "",
     start: form.elements.start.value,
     end: form.elements.end.value,
@@ -1480,7 +1492,7 @@ function readSchedulePayload() {
   const form = $("draft-form");
   const payload = {
     site_id: form.elements.site_id.value,
-    report_type: form.querySelector('input[name="report_type"]:checked')?.value || "",
+    report_type: reportTypeValue(),
     format: form.querySelector('input[name="format"]:checked')?.value || "",
     frequency: form.querySelector('input[name="frequency"]:checked:not(:disabled)')?.value || "",
     recipients: parseRecipients(form.elements.recipients.value).recipients,
@@ -1604,7 +1616,7 @@ async function openDraft(requested, prefill = null, { fromFlow = false, fresh = 
   const ticketFields = $("ticket-fields");
   reportFields.hidden = kind !== "report";
   ticketFields.hidden = kind !== "ticket";
-  for (const input of reportFields.querySelectorAll("input")) input.disabled = kind !== "report";
+  for (const input of reportFields.querySelectorAll("input, select")) input.disabled = kind !== "report";
   for (const input of ticketFields.querySelectorAll("input, textarea")) {
     input.disabled = kind !== "ticket";
     input.required = kind === "ticket" && input.name !== "alarm_id";
@@ -1612,7 +1624,7 @@ async function openDraft(requested, prefill = null, { fromFlow = false, fresh = 
   const multipleSites = user.sites.length > 1;
   if (kind === "report") {
     form.elements.mode.value = scheduled ? "scheduled" : "on-demand";
-    renderReportChoices(prefill?.report_type);
+    renderReportTypes(prefill?.report_type);
     applyMode();
     for (const input of form.querySelectorAll('input[name="format"]')) {
       if (input.value === prefill?.format && !input.disabled) input.checked = true;
@@ -1660,7 +1672,7 @@ async function openDraft(requested, prefill = null, { fromFlow = false, fresh = 
   panel.hidden = false;
   const focusTarget = focus === "recipients" ? form.elements.recipients
     : multipleSites ? form.elements.site_id
-      : kind === "report" ? form.querySelector('input[name="report_type"]:checked') : form.elements.summary;
+      : kind === "report" ? form.elements.report_type : form.elements.summary;
   focusTarget?.focus();
   scrollToLatest();
   return true;
@@ -1745,10 +1757,7 @@ $("draft-form").addEventListener("change", (event) => {
   if (draftKind !== "report") return;
   if (name === "mode") applyMode();
   if (name === "period") applyPeriod(value, { focusCustom: value === "custom" });
-  if (name === "report_type") {
-    syncFormats();
-    syncSchedule();
-  }
+  if (name === "report_type") syncReportType();
   if (name === "start_date") syncSchedule();
   updateReportBuilder({ animate: true });
 });
@@ -1960,14 +1969,19 @@ function applyDraftChanges(changes) {
   const form = $("draft-form");
   if ($("draft-panel").hidden || draftKind !== "report") throw new Error("Open the report builder first.");
   for (const [name, value] of Object.entries(changes)) {
-    const input = [...form.querySelectorAll(`input[name="${name}"]`)].find((item) => item.value === value && !item.disabled);
-    if (!input) throw new Error("The report builder doesn’t offer that choice.");
-    input.checked = true;
-    if (name === "period") applyPeriod(value);
-    if (name === "report_type") {
-      syncFormats();
-      syncSchedule();
+    const control = form.elements.namedItem(name);
+    if (control instanceof HTMLSelectElement) {
+      if (![...control.options].some((option) => option.value === value && !option.disabled)) {
+        throw new Error("The report builder doesn’t offer that choice.");
+      }
+      control.value = value;
+    } else {
+      const input = [...form.querySelectorAll(`input[name="${name}"]`)].find((item) => item.value === value && !item.disabled);
+      if (!input) throw new Error("The report builder doesn’t offer that choice.");
+      input.checked = true;
     }
+    if (name === "period") applyPeriod(value);
+    if (name === "report_type") syncReportType();
   }
   updateReportBuilder({ animate: true });
 }

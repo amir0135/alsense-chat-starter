@@ -165,8 +165,11 @@
                 </div>
               </div>
               <div class="builder-row">
-                <span id="report-type-label" class="row-label">Report</span>
-                <div id="report-type-options" class="choice-cards row-control" role="radiogroup" aria-labelledby="report-type-label"></div>
+                <label id="report-type-label" class="row-label" for="draft-report-type">Report</label>
+                <div class="row-control">
+                  <select id="draft-report-type" name="report_type" aria-describedby="report-type-details"></select>
+                  <p id="report-type-details" class="field-help"></p>
+                </div>
               </div>
               <div id="period-row" class="builder-row">
                 <span id="period-label" class="row-label">Period</span>
