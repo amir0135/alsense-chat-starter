@@ -141,18 +141,32 @@ conversation.
 
 ## Estimating model cost
 
-The starter ships no prices, so `dev.py usage` shows the estimated cost as "not configured" until you set
-`MODEL_PRICE_INPUT`, `MODEL_PRICE_CACHED_INPUT` and `MODEL_PRICE_OUTPUT` in `.env`: US dollars per million
-tokens, from the Azure OpenAI pricing page for your deployment's model, deployment type and region (Data Zone,
-Global and Regional prices differ). Then it shows the estimated cost per user and in total, and each chat request's
-log line carries its estimate as `estimated_cost_usd`.
+The starter ships no prices, so the estimated cost shows as "not configured" until all three are set.
+
+1. **Read the rates** from the Azure OpenAI pricing page, in US dollars per million tokens: input, cached input and
+   output, for your deployment's model, deployment type and region. Data Zone, Global and Regional prices differ;
+   the hosted demo deploys Data Zone Standard.
+2. **Set them** as `MODEL_PRICE_INPUT`, `MODEL_PRICE_CACHED_INPUT` and `MODEL_PRICE_OUTPUT`, all three or none:
+   - locally and with Docker Compose, in `.env`;
+   - in the hosted demo, as deploy flags:
+     `bash infra/deploy.sh --subscription ID --price-input INPUT --price-cached-input CACHED --price-output OUTPUT`
+     ([azure-demo.md](azure-demo.md#model-prices));
+   - on any other host, as the app's environment variables.
+
+   Startup refuses a partial set, or a value that isn't a non-negative number.
+3. **Check them** on `/system` (the Estimated cost row) or with `uv run python scripts/dev.py doctor`.
+4. **Update them** when the price list or the deployment changes: edit `.env` and restart the app, or deploy again
+   with the new flags. A deployment without the flags removes the prices.
+
+`dev.py usage` then shows the estimated cost per user and in total. It re-estimates all recorded usage at the
+current rates; `--price-input`, `--price-cached-input` and `--price-output` compare other rates without changing
+the settings. Each chat request's log line keeps the estimate made at the time, as `estimated_cost_usd`.
 
 > estimated cost = (input − cached input) × input price + cached input × cached input price + output × output price
 
 Reasoning tokens are part of the output tokens and are not counted again. Calls that reported no usage are left
-out and counted, so the estimate is a lower bound when there are any. `--price-input`, `--price-cached-input` and
-`--price-output` re-estimate recorded usage at other prices without changing `.env`. The bill can differ: it
-depends on the agreement, discounts and how the service rounds, so treat this as a guide, not an invoice.
+out and counted, so the estimate is a lower bound when there are any. The bill can differ: it depends on the
+agreement, discounts and how the service rounds, so treat this as a guide, not an invoice.
 
 ## Measuring model latency
 

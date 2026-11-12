@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import math
 import os
 import re
 import secrets
@@ -15,6 +16,12 @@ from pathlib import Path
 from zipfile import ZipFile
 
 ROOT = Path(__file__).resolve().parents[1]
+# The model prices for the app's estimated cost, in US dollars per million tokens, and their template parameters.
+PRICES = {
+    "price_input": "modelPriceInput",
+    "price_cached_input": "modelPriceCachedInput",
+    "price_output": "modelPriceOutput",
+}
 
 
 def az(*args: str, capture: bool = True):
@@ -44,6 +51,22 @@ def health(url: str) -> None:
     raise RuntimeError("App did not become healthy. Inspect Container Apps logs; resources remain for diagnosis.")
 
 
+def model_prices(args: argparse.Namespace) -> dict[str, str]:
+    """The template's price parameters: each price a non-negative number, all three given or none (empty)."""
+    given = {key: getattr(args, key).strip() for key in PRICES if getattr(args, key) is not None}
+    for key, value in given.items():
+        try:
+            amount = float(value)
+        except ValueError:
+            amount = math.nan
+        if not math.isfinite(amount) or amount < 0:
+            flag = "--" + key.replace("_", "-")
+            raise ValueError(f"{flag} must be a non-negative number of US dollars per million tokens.")
+    if given and len(given) < len(PRICES):
+        raise ValueError("Pass --price-input, --price-cached-input and --price-output together, or none.")
+    return {parameter: given.get(key, "") for key, parameter in PRICES.items()}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--subscription", required=True)
@@ -58,6 +81,13 @@ def main() -> None:
         default=250,
         help="Thousands of tokens per minute; needs that much quota for the model in the model region.",
     )
+    for key in PRICES:
+        parser.add_argument(
+            "--" + key.replace("_", "-"),
+            metavar="USD",
+            help=f"US dollars per million {key.removeprefix('price_').replace('_', ' ')} tokens, for the app's "
+            "estimated cost. Pass all three prices or none; without them the cost is not estimated.",
+        )
     parser.add_argument("--image-tag", help="Reuse an existing image in this stack's registry instead of rebuilding.")
     parser.add_argument("--what-if", action="store_true")
     parser.add_argument("--yes", action="store_true", help="Approve resource creation after previewing with --what-if.")
@@ -66,9 +96,21 @@ def main() -> None:
         parser.error("--name must be 3-20 lowercase letters/digits/hyphens, starting with a letter.")
     if args.image_tag and not re.fullmatch(r"[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}", args.image_tag):
         parser.error("--image-tag is not a valid container image tag.")
+    try:
+        prices = model_prices(args)
+    except ValueError as error:
+        parser.error(str(error))
     account = az("account", "show", "--subscription", args.subscription)
     subscription = account["id"]
     print(f"Target: {account['name']} ({subscription}); app {args.location}; model {args.ai_location}", flush=True)
+    if prices["modelPriceInput"]:
+        rates = "input {modelPriceInput}, cached input {modelPriceCachedInput}, output {modelPriceOutput}"
+        print(f"Estimated cost at US dollars per million tokens: {rates.format(**prices)}", flush=True)
+    else:
+        print(
+            "Estimated cost: not configured. Pass --price-input, --price-cached-input and --price-output to set it.",
+            flush=True,
+        )
     rg = f"rg-{args.name}"
     groups = az("group", "list", "--subscription", subscription, "--query", f"[?name=='{rg}']")
     if groups and groups[0].get("tags", {}).get("application") != "alsense-synthetic-starter":
@@ -92,6 +134,7 @@ def main() -> None:
         "modelVersion": args.model_version,
         "modelDeployment": args.model,
         "modelCapacity": args.model_capacity,
+        **prices,
         "demoAccessCode": code,
         "imageTag": "",
     }

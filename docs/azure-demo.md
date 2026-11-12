@@ -64,8 +64,8 @@ The Foundry deployment uses its Azure default content-filter configuration; an e
 integration and APIM policies are not implemented. No Search, Cosmos DB or APIM is created merely as a placeholder.
 
 Costs include the registry, container replica, model usage (input and output tokens, reasoning included),
-monitoring and Key Vault operations. `dev.py usage` estimates the model cost per user once you set the model prices
-([HANDOVER](HANDOVER.md#estimating-model-cost)). The logging
+monitoring and Key Vault operations. `dev.py usage` estimates the model cost per user once you pass the model
+prices ([Model prices](#model-prices)). The logging
 workspace has a daily ingestion cap, but it is **not a subscription spending cap**. Idle resources still cost
 money. Inspect Cost Management and remove your demo when finished. Key Vault purge protection retains a deleted
 vault for its retention interval; you cannot immediately reuse its name after deletion.
@@ -96,6 +96,23 @@ answers in its family. Effort `high` rather than `max`, because maximum effort i
 better. The model was released on 26 October 2026 and independent results are still few: run your own evaluation
 cases (`dev.py evals --mode model`) and `dev.py measure` before relying on it. If it falls short, GPT-6.1 Sol is
 the next step up, at twice the price per token.
+
+## Model prices
+
+The app estimates the model cost per user once it has the model's prices; none are shipped. Read them from the
+Azure OpenAI pricing page for the model, Data Zone Standard and the model region, in US dollars per million tokens,
+and pass all three:
+
+```bash
+bash infra/deploy.sh --subscription YOUR_SUBSCRIPTION_ID \
+  --price-input INPUT --price-cached-input CACHED --price-output OUTPUT
+```
+
+The script checks them before it deploys anything and sets them as the container app's `MODEL_PRICE_INPUT`,
+`MODEL_PRICE_CACHED_INPUT` and `MODEL_PRICE_OUTPUT`. `/system` then shows the rates in its Estimated cost row.
+Every deployment sets these variables from its flags, so pass the prices again when you redeploy; add
+`--image-tag <existing-tag>` to change only the prices. Without the flags the cost shows as not configured.
+[HANDOVER](HANDOVER.md#estimating-model-cost) explains the estimate.
 
 ## Demo walkthrough
 

@@ -69,6 +69,18 @@ def test_system_shows_the_model_deployment_and_its_reasoning(tmp_path, monkeypat
     assert "up to 4000 output tokens" in changed["detail"]
 
 
+def test_system_shows_the_model_prices_or_that_the_cost_is_not_configured(tmp_path):
+    with app_client(tmp_path) as client:
+        unset = {item["id"]: item for item in client.get("/api/system").json()["items"]}["cost"]
+    with app_client(tmp_path, price_input=1.25, price_cached_input=0.125, price_output=10.0) as client:
+        priced = {item["id"]: item for item in client.get("/api/system").json()["items"]}["cost"]
+    assert (unset["label"], unset["value"], unset["state"]) == ("Estimated cost", "Not configured", "disabled")
+    assert unset["detail"].startswith("Set MODEL_PRICE_INPUT, MODEL_PRICE_CACHED_INPUT and MODEL_PRICE_OUTPUT, in US")
+    assert (priced["label"], priced["state"]) == ("Estimated cost", "configured")
+    assert priced["value"] == "USD per million tokens: input 1.25, cached input 0.125, output 10"
+    assert "estimate the model cost" in priced["detail"]
+
+
 def test_system_flags_global_faults_and_disabled_features(tmp_path):
     with app_client(tmp_path, "api_timeout", features=frozenset({"troubleshooting"})) as client:
         status = client.get("/api/system").json()

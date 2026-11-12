@@ -14,6 +14,7 @@ from .agent import load_agent
 from .config import ROOT, Settings
 from .flows import available
 from .scenarios import unavailable_reason
+from .usage import SETTINGS
 
 REPOSITORY = ROOT.parents[1]
 STATES = {
@@ -203,6 +204,28 @@ def system_status(state) -> dict:
             "configured" if settings.telemetry_connection else "disabled",
         )
     )
+    rates = settings.prices
+    if rates is not None:
+        items.append(
+            _item(
+                "cost",
+                "Estimated cost",
+                f"USD per million tokens: {rates.describe()}",
+                "configured",
+                f"Set by {SETTINGS}. dev.py usage and the request logs estimate the model cost from the token "
+                "counts at these rates; the bill can differ.",
+            )
+        )
+    else:
+        items.append(
+            _item(
+                "cost",
+                "Estimated cost",
+                "Not configured",
+                "disabled",
+                f"Set {SETTINGS}, in US dollars per million tokens, to estimate the model cost. No prices are shipped.",
+            )
+        )
     faults = sorted(settings.synthetic_faults)
     items.append(
         _item(

@@ -46,6 +46,7 @@ PRICES = {
     "cached_input": "MODEL_PRICE_CACHED_INPUT",
     "output": "MODEL_PRICE_OUTPUT",
 }
+SETTINGS = "{}, {} and {}".format(*PRICES.values())
 PER_TOKENS = 1_000_000
 
 
@@ -101,6 +102,10 @@ class Prices:
         output = usage.get("output_tokens", 0)
         return (uncached * self.input + cached * self.cached_input + output * self.output) / PER_TOKENS
 
+    def describe(self) -> str:
+        """The rates as the reports, /system and the doctor show them, in US dollars per million tokens."""
+        return f"input {self.input:g}, cached input {self.cached_input:g}, output {self.output:g}"
+
 
 def price(name: str, value: str | None) -> float | None:
     """One price setting: empty means not set, otherwise a non-negative number of US dollars per million tokens."""
@@ -121,8 +126,7 @@ def prices(values: Mapping[str, float | None]) -> Prices | None:
     if len(missing) == len(PRICES):
         return None
     if missing:
-        *first, last = PRICES.values()
-        raise ValueError(f"Set {', '.join(first)} and {last} together, or none. Missing: {', '.join(missing)}.")
+        raise ValueError(f"Set {SETTINGS} together, or none. Missing: {', '.join(missing)}.")
     return Prices(**{key: float(values[key]) for key in PRICES})  # type: ignore[arg-type]
 
 
@@ -233,15 +237,13 @@ def render(summary: dict, source: str) -> str:
     period = f"the last {days:g} days" if days is not None else "all recorded time"
     lines = [f"Usage per user in {source}, {period}. Requests exclude the widget's timing reports."]
     if rates is None:
-        *first, last = PRICES.values()
         lines.append(
-            f"Estimated cost: not configured. Set {', '.join(first)} and {last} (US dollars per million tokens),"
+            f"Estimated cost: not configured. Set {SETTINGS} (US dollars per million tokens),"
             " or pass --price-input, --price-cached-input and --price-output."
         )
     else:
         lines += [
-            f"Estimated cost at US dollars per million tokens: input {rates['input']:g}, cached input"
-            f" {rates['cached_input']:g}, output {rates['output']:g}.",
+            f"Estimated cost at US dollars per million tokens: {Prices(**rates).describe()}.",
             "Each token is priced once: cached input is part of the input and reasoning part of the output.",
         ]
     lines.append("")

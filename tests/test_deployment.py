@@ -79,3 +79,81 @@ def test_infrastructure_cloud_auth_and_export_boundary():
     assert all("demoAccessCode" not in line for line in outputs)
     assert ".azure" in (ROOT / ".dockerignore").read_text()
     assert ".azure/" in (ROOT / ".gitignore").read_text()
+
+
+PRICE_PARAMETERS = {
+    "modelPriceInput": "MODEL_PRICE_INPUT",
+    "modelPriceCachedInput": "MODEL_PRICE_CACHED_INPUT",
+    "modelPriceOutput": "MODEL_PRICE_OUTPUT",
+}
+
+
+def preview(deploy_module, monkeypatch, tmp_path, *flags: str) -> dict:
+    """Preview a deployment with Azure faked, and return the template parameters it sends."""
+    sent = []
+
+    def az(*args, capture=True):
+        if args[:2] == ("account", "show"):
+            return {"id": "synthetic-subscription", "name": "Synthetic subscription"}
+        if args[:3] == ("deployment", "sub", "what-if"):
+            file = Path(args[args.index("--parameters") + 1].removeprefix("@"))
+            sent.append(json.loads(file.read_text())["parameters"])
+        return []
+
+    monkeypatch.setattr(deploy_module, "az", az)
+    monkeypatch.setattr(deploy_module, "ROOT", tmp_path)
+    monkeypatch.setattr("sys.argv", ["deploy.py", "--subscription", "synthetic-subscription", "--what-if", *flags])
+    deploy_module.main()
+    [parameters] = sent
+    return {name: parameter["value"] for name, parameter in parameters.items()}
+
+
+def test_model_prices_reach_the_container_only_when_given(deploy_module, monkeypatch, tmp_path, capsys):
+    flags = ("--price-input", "1.25", "--price-cached-input", " 0.125 ", "--price-output", "10")
+    priced = preview(deploy_module, monkeypatch, tmp_path, *flags)
+    assert "Estimated cost at US dollars per million tokens: input 1.25, cached input 0.125, output 10" in (
+        capsys.readouterr().out
+    )
+    unpriced = preview(deploy_module, monkeypatch, tmp_path)
+    assert "Estimated cost: not configured." in capsys.readouterr().out
+    assert [priced[name] for name in PRICE_PARAMETERS] == ["1.25", "0.125", "10"]
+    assert [unpriced[name] for name in PRICE_PARAMETERS] == ["", "", ""]
+    main = (ROOT / "infra" / "main.bicep").read_text()
+    assert set(priced) <= set(re.findall(r"^param (\w+) ", main, re.MULTILINE)), "every parameter is declared"
+    resources = (ROOT / "infra" / "resources.bicep").read_text()
+    for parameter, variable in PRICE_PARAMETERS.items():
+        assert f"param {parameter} string = ''" in main and f"    {parameter}: {parameter}\n" in main
+        assert f"{{ name: '{variable}', value: {parameter} }}" in resources
+    # Each variable is set only when its price was given; the app refuses a partial set at startup.
+    assert "price => !empty(price.value)" in resources and "], modelPrices)" in resources
+
+
+@pytest.mark.parametrize(
+    ("flags", "message"),
+    [
+        (
+            ("--price-input", "cheap", "--price-cached-input", "0.1", "--price-output", "5"),
+            "--price-input must be a non-negative number of US dollars per million tokens.",
+        ),
+        (
+            ("--price-input", "1", "--price-cached-input", "-0.1", "--price-output", "5"),
+            "--price-cached-input must be a non-negative number of US dollars per million tokens.",
+        ),
+        (
+            ("--price-input", "1", "--price-cached-input", "0.1", "--price-output", "nan"),
+            "--price-output must be a non-negative number of US dollars per million tokens.",
+        ),
+        (
+            ("--price-input", "1", "--price-output", "5"),
+            "Pass --price-input, --price-cached-input and --price-output together, or none.",
+        ),
+    ],
+)
+def test_model_prices_are_checked_before_anything_reaches_azure(deploy_module, monkeypatch, capsys, flags, message):
+    calls = []
+    monkeypatch.setattr(deploy_module, "az", lambda *args, **kwargs: calls.append(args))
+    monkeypatch.setattr("sys.argv", ["deploy.py", "--subscription", "synthetic-subscription", *flags])
+    with pytest.raises(SystemExit) as stopped:
+        deploy_module.main()
+    assert stopped.value.code == 2 and message in capsys.readouterr().err
+    assert calls == []
