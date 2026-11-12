@@ -107,8 +107,8 @@ const REPORT_NOTES = {
 const FORMAT_LABELS = { pdf: "PDF", csv: "CSV", xlsx: "Excel" };
 const FREQUENCY_LABELS = { daily: "Daily", weekly: "Weekly", monthly: "Monthly" };
 const EMAIL = /^[A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
-/* A running job is checked again soon, then less often, for up to five minutes. */
-const STATUS_POLL = { first: 1500, growth: 1.5, longest: 10000, limit: 5 * 60 * 1000 };
+/* A running job is checked again soon, then less often, for up to two minutes. */
+const STATUS_POLL = { first: 1500, growth: 1.5, longest: 10000, limit: 2 * 60 * 1000 };
 const followedReports = new WeakSet();
 const DEFAULT_PERIOD = "last-30";
 const PERIODS = {
@@ -492,7 +492,7 @@ function pageVisible() {
 
 /* Shows the result as soon as the service has it. A job still running is checked again, less often over time,
    while its card stays in the conversation of the same session and the page is visible: one loop per card. It stops
-   on a result, an error (the caller shows it) or a new session, and after five minutes says so. */
+   on a result, an error (the caller shows it) or a new session, and after two minutes says so. */
 async function followReport(actionId, container, synthetic = true) {
   if (followedReports.has(container)) return null;
   followedReports.add(container);
