@@ -59,6 +59,7 @@ const ACTION_COPY = {
   report: {
     title: "Report ready for review", confirm: "Confirm synthetic report", retry: "Retry synthetic report",
     final: "Synthetic report ready", link: "Open synthetic report", progress: "Report progress",
+    requested: "Report requested", preparing: "Being prepared", failure: "Synthetic report failed",
     pending: "Nothing has been sent. Confirm below to create this synthetic report.",
     done: "Submitted · synthetic", sent: "Submitted to the synthetic demo. No real report was created.",
   },
@@ -78,6 +79,7 @@ const ACTION_COPY = {
 const LIVE_ACTION_COPY = {
   report: {
     confirm: "Confirm report", retry: "Retry report", final: "Report ready", link: "Open report",
+    failure: "Report failed",
     pending: "Nothing has been sent. Confirm below to create this report.",
     done: "Submitted", sent: "Submitted to the report service.",
   },
@@ -448,7 +450,7 @@ function renderReportResult(container, status, { live = false, stopped = false, 
     const note = node("p", "download-note is-pending");
     if (live) note.append(node("span", "inline-spinner"));
     note.append(document.createTextNode(live
-      ? "Preparing the report. The download link appears here when it’s ready."
+      ? "Preparing the report. The download link appears here when it’s finished."
       : stopped
         ? `Still being prepared after ${Math.round(STATUS_POLL.limit / 60000)} minutes, so it’s no longer checked `
           + "automatically. Use Check status to look again."
@@ -492,8 +494,9 @@ function pageVisible() {
 
 /* Shows the result as soon as the service has it. A job still running is checked again, less often over time,
    while its card stays in the conversation of the same session and the page is visible: one loop per card. It stops
-   on a result, an error (the caller shows it) or a new session, and after two minutes says so. */
-async function followReport(actionId, container, synthetic = true) {
+   on a result, an error (the caller shows it) or a new session, and after two minutes says so. Each state read is
+   passed to onState. */
+async function followReport(actionId, container, synthetic = true, onState = () => {}) {
   if (followedReports.has(container)) return null;
   followedReports.add(container);
   const session = token;
@@ -506,6 +509,7 @@ async function followReport(actionId, container, synthetic = true) {
       const running = status.state === "processing";
       const again = running && performance.now() - started + delay <= STATUS_POLL.limit;
       renderReportResult(container, status, { live: again, stopped: running && !again, synthetic });
+      onState(status.state);
       if (!again) return status;
       await new Promise((resolve) => setTimeout(resolve, delay));
       await pageVisible();
@@ -696,7 +700,8 @@ function renderAction(action, parent, synthetic = true) {
   const head = node("div", "action-head");
   const titles = node("div");
   const subtitle = node("p", "", copy.pending);
-  titles.append(node("h3", "", copy.title), subtitle);
+  const heading = node("h3", "", copy.title);
+  titles.append(heading, subtitle);
   const badge = node("span", "action-badge");
   head.append(titles, badge);
 
@@ -736,9 +741,21 @@ function renderAction(action, parent, synthetic = true) {
   state.setAttribute("role", "status");
   state.hidden = true;
 
+  /* The report service prepares an on-demand report after it was submitted, so the last step follows the job: it
+     stays current until the service says the job completed or failed. */
+  const showJob = (job) => {
+    const [step, label] = { completed: ["is-success", copy.final], failed: ["is-error", copy.failure] }[job]
+      || ["is-current", copy.preparing];
+    stepItems[2].className = step;
+    stepLabels[2].textContent = label;
+    if (step === "is-current") stepItems[2].setAttribute("aria-current", "step");
+    else stepItems[2].removeAttribute("aria-current");
+  };
+
   const setState = (name) => {
     const config = ACTION_STATES[name];
     card.dataset.state = name;
+    heading.textContent = name === "submitted" && copy.requested ? copy.requested : copy.title;
     badge.textContent = name === "submitted" ? copy.done : config.badge;
     subtitle.textContent = name === "submitted" ? copy.sent : copy.pending;
     stepItems.forEach((item, index) => {
@@ -747,12 +764,26 @@ function renderAction(action, parent, synthetic = true) {
       else item.removeAttribute("aria-current");
     });
     stepLabels[1].textContent = name === "submitted" ? "Confirmed" : "Confirm";
+    stepLabels[2].textContent = copy.final;
+    if (name === "submitted" && kind === "report") showJob("processing");
   };
   setState("prepared");
 
-  const checkStatus = () => send(`/status ${action.id}`,
-    kind === "scheduled_report" ? "Check the status of this schedule" : "Check the status of this report");
   const result = node("div", "card-result");
+  /* A check asked from the card also brings the card up to date, so the card and the reply never disagree. */
+  const checkStatus = async () => {
+    const sent = await send(`/status ${action.id}`,
+      kind === "scheduled_report" ? "Check the status of this schedule" : "Check the status of this report");
+    const job = sent && kind === "report" && card.dataset.state === "submitted"
+      ? (lastReply?.sources || []).filter((source) => source.tool === "get_report_status").pop()?.data
+      : null;
+    if (job?.kind === "report") {
+      /* A card still checked automatically shows the next result itself. */
+      if (!followedReports.has(result)) renderReportResult(result, job, { synthetic });
+      showJob(job.state);
+    }
+    return sent;
+  };
 
   /* Returns whether the submission succeeded; failures stay visible on the card. */
   const confirmAction = async () => {
@@ -788,7 +819,7 @@ function renderAction(action, parent, synthetic = true) {
           renderReportResult(result, { state: "scheduled", result: submission }, { synthetic });
         } else {
           /* The link is the point of the report: fetch it right away instead of waiting for "Check status". */
-          followReport(action.id, result, synthetic).catch((error) => {
+          followReport(action.id, result, synthetic, showJob).catch((error) => {
             result.replaceChildren(node("p", "download-note is-failed",
               `${error.message} Use Check status to try again.`));
           });
