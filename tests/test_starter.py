@@ -332,7 +332,7 @@ def test_foundry_backend_executes_tools_and_never_receives_credentials(tmp_path)
         )
 
     runner = FoundryRunner.__new__(FoundryRunner)
-    runner.deployment = "test"
+    runner.deployment, runner.reasoning_effort, runner.max_output_tokens = "test", "high", 8000
     runner.client = SimpleNamespace(responses=SimpleNamespace(create=create))
     events = list(runner.run("My sites?", ctx))
     assert events[-1][1]["sources"][0]["data"]["sites"][0]["id"] == "site-a"

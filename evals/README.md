@@ -18,6 +18,7 @@ uv run python scripts/dev.py evals -k reporting --json          # one suite, mac
 | `synthetic/sites.yaml` | Site resolution: one match, similar sites, no match, no access, service unavailable |
 | `synthetic/permissions.yaml` | Tenant and site isolation, upstream 403, outages, assistant unavailable |
 | `synthetic/troubleshooting.yaml` | Guided checks, failed lookups, approved guidance |
+| `synthetic/frontend_actions.yaml` | Opening or filtering the app's screens, which the assistant can't do yet: nothing is prepared or claimed |
 
 ## Writing a case
 

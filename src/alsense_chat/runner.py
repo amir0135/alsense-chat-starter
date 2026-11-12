@@ -1,10 +1,16 @@
+import email.utils
 import json
 import logging
+import math
 import re
-from collections.abc import Iterator
+import time
+from collections.abc import Iterator, Mapping
 from datetime import date
+from random import random
+from time import sleep
 from typing import Any, Literal, cast
 
+from openai import APIConnectionError, APIStatusError, APITimeoutError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .adapters.errors import IntegrationError, ModelUnavailable
@@ -17,6 +23,12 @@ from .flows import FlowError, match_trigger, menu_reply, run_flow
 from .tools import FEATURE_OFF, Context, evidence_text, internal_identifiers, tool_definitions
 
 log = logging.getLogger(__name__)
+# The OpenAI SDK's default retry policy. The SDK's own retries are switched off and FoundryRunner.create applies the
+# same policy itself, so the time spent waiting is measured apart from the model's own time.
+MAX_RETRIES = 2
+MAX_RETRY_AFTER = 120.0
+INITIAL_RETRY_DELAY = 0.5
+MAX_RETRY_DELAY = 8.0
 
 MODEL_STATUSES = ("answer", "clarification", "not_in_data", "out_of_scope")
 CHECKED = "Passed: sources, numbers, links and wording verified"
@@ -32,6 +44,21 @@ CLAIM = re.compile(
     re.IGNORECASE,
 )
 NEGATIONS = {"no", "not", "nothing", "never", "none", "neither", "nor"}
+# The assistant can't operate the app's screens: no tool opens, filters or applies anything there. A reply may tell
+# the user how to do it, never say it was done. Doors and filters in the equipment stay out of this.
+INTERFACE = r"(?:dashboards?|views?|filters?|pages?|tabs?|screens?|alarm\s+lists?|alarms)"
+INTERFACE_CLAIM = re.compile(
+    rf"\b(?:I|we)(?:['’]ve|\s+have)?\s+(?:(?:just|now|already|gone\s+ahead\s+and)\s+)*"
+    rf"(?:opened|filtered|applied|switched|navigated)\b[^.!?\n]{{0,40}}?\b{INTERFACE}\b"
+    rf"|\b{INTERFACE}(?:\s+(?:for|of|on|in|at)\s+[\w’'-]+(?:\s+[\w’'-]+){{0,3}})?\s+"
+    r"(?:(?:is|are)\s+now\s+(?:open|opened|filtered|applied)|(?:was|were)\s+(?:now\s+)?(?:opened|filtered|applied)"
+    r"|(?:has|have)\s+(?:now\s+)?been\s+(?:opened|filtered|applied))\b",
+    re.IGNORECASE,
+)
+# Guidance tells the user what to check or do, such as "Make sure the filter has been applied": it claims nothing.
+GUIDANCE = re.compile(
+    r"\b(?:make\s+sure|ensure|check|verify|if|when|whether|once|until|before|after|unless)\b", re.IGNORECASE
+)
 # "...is created once you press Confirm" describes what will happen, not what happened.
 CONDITION = (
     r"(?:only\s+)?(?:once|after|when|if|until|before|as\s+soon\s+as)\s+you\s+(?:press|confirm|review|click|approve)\b"
@@ -63,6 +90,16 @@ def claim(text: str) -> str | None:
     return None
 
 
+def interface_claim(text: str) -> str | None:
+    """The first wording that says something was opened, filtered or applied in the app, outside guidance."""
+    for match in INTERFACE_CLAIM.finditer(text):
+        sentence = text[: match.start()]
+        sentence = sentence[max(sentence.rfind(mark) for mark in ".!?\n") + 1 :]
+        if not GUIDANCE.search(sentence):
+            return match.group(0)
+    return None
+
+
 def numbers(text: str) -> set[str]:
     # "05" in an ISO date and "5" in "5 Nov 2026" are the same number.
     return {re.sub(r"^0+(?=\d)", "", value) for value in NUMBER.findall(text)}
@@ -73,6 +110,12 @@ def confirmed_by_service(ctx: Context) -> bool:
 
 
 def guard(raw: str, ctx: Context) -> Reply:
+    """Parse and check a reply before it is released, timed as the guard stage."""
+    with ctx.timings.stage("guard"):
+        return _checked(raw, ctx)
+
+
+def _checked(raw: str, ctx: Context) -> Reply:
     reply = Reply.model_validate_json(raw)
     if reply.status not in MODEL_STATUSES:
         raise ValueError("Only the backend reports errors.")
@@ -97,6 +140,8 @@ def guard(raw: str, ctx: Context) -> Reply:
         raise ValueError("Number absent from tool evidence.")
     if ctx.actions and re.search(r"\b(submitted|sent|created successfully)\b", reply.text, re.IGNORECASE):
         raise ValueError("A draft has not been submitted.")
+    if interface_claim(reply.text):
+        raise ValueError("The assistant can't open, filter or apply anything in the app.")
     if claim(reply.text) and (ctx.actions or not confirmed_by_service(ctx)):
         raise ValueError("Only a result the service confirmed can be reported as created, scheduled or sent.")
     return reply
@@ -184,6 +229,12 @@ EMPTY = {
     "search_docs": "No approved guidance matches this issue. You can prepare a support request.",
     "get_permitted_sites": "You don't have access to any sites in this demo.",
 }
+# The same wording without "synthetic" or "demo", for data that doesn't come from the synthetic services.
+LIVE_REPORT_STATES = {
+    **REPORT_STATES,
+    "completed": "Your report is ready. Download it with the link below before the link expires.",
+}
+LIVE_EMPTY = {**EMPTY, "get_permitted_sites": "You don't have access to any sites."}
 
 
 def demo_text(name: str, data, ctx: Context) -> str:
@@ -212,7 +263,7 @@ def demo_text(name: str, data, ctx: Context) -> str:
             next_run = (data.get("result") or {}).get("next_run")
             first = f" The first report goes out on {_day(next_run)}." if next_run else ""
             return "Your schedule is confirmed." + first
-        return REPORT_STATES[data["state"]]
+        return (REPORT_STATES if ctx.services.kind == "synthetic" else LIVE_REPORT_STATES)[data["state"]]
     return "Here is the latest status."
 
 
@@ -264,7 +315,9 @@ JSON_COMMANDS = {"prepare_report", "prepare_scheduled_report", "prepare_support_
 
 def demo_run(message: str, ctx: Context) -> Iterator[tuple[str, dict]]:
     """Deterministic local harness, not an AI model. Slash commands exercise the real tool handlers."""
-    route(message, ctx)
+    # Routing picks the domains and their tools: the scripted assistant's tool selection.
+    with ctx.timings.stage("route"):
+        route(message, ctx)
     command, _, rest = message.partition(" ")
     command = command.lower()
     if command == "/flows":
@@ -350,7 +403,8 @@ def demo_run(message: str, ctx: Context) -> Iterator[tuple[str, dict]]:
         return
     data = output["data"]
     if not data or (name == "get_permitted_sites" and not data["sites"]):
-        text = EMPTY.get(name, "The permitted data does not answer that lookup. You can prepare a support ticket.")
+        empty = EMPTY if ctx.services.kind == "synthetic" else LIVE_EMPTY
+        text = empty.get(name, "The permitted data does not answer that lookup. You can prepare a support ticket.")
         reply = Reply(status="not_in_data", text=text, source_ids=[])
     else:
         reply = Reply(status="answer", text=demo_text(name, data, ctx), source_ids=[output["source_id"]])
@@ -364,28 +418,106 @@ class FoundryRunner:
 
         self.credential = DefaultAzureCredential()
         self.project = AIProjectClient(endpoint=settings.foundry_endpoint, credential=self.credential)
-        self.client = self.project.get_openai_client()
+        # Retries happen in create(), where each wait is measured and logged.
+        self.client = self.project.get_openai_client(max_retries=0)
         self.deployment = settings.deployment
+        self.reasoning_effort = settings.reasoning_effort
+        self.max_output_tokens = settings.max_output_tokens
 
     def close(self) -> None:
         self.client.close()
         self.project.close()
         self.credential.close()
 
-    def create(self, **request: Any) -> Any:
-        try:
-            return self.client.responses.create(**request)
-        except Exception as exc:
-            # Never fall back to the scripted assistant: say the model is unavailable.
-            log.warning("Model call failed (%s)", type(exc).__name__)
-            raise ModelUnavailable() from exc
+    def create(self, ctx: Context, **request: Any) -> tuple[Any, list]:
+        """One model round: the response and its function calls.
+
+        Each attempt is a model stage. A successful one counts as model_tool_selection or model_answer, a failed one
+        as model_failed. The wait before a retry counts as model_throttled after a 429 and as model_retry otherwise.
+        """
+        for retries in range(MAX_RETRIES + 1):
+            with ctx.timings.stage("model", "model_failed") as attempt:
+                ctx.usage.call()
+                try:
+                    response = self.client.responses.create(**request)
+                except Exception as exc:
+                    error = exc
+                    attempt.attributes["result"], attempt.failed = failure(exc), type(exc).__name__
+                else:
+                    # Counted before the status check: an incomplete round can still have used tokens.
+                    reported = ctx.usage.add(getattr(response, "usage", None))
+                    attempt.metrics |= {
+                        f"gen_ai.usage.{key}": reported[key]
+                        for key in ("input_tokens", "output_tokens")
+                        if key in reported
+                    }
+                    if response.status != "completed":
+                        # Why, as the service's own categories: an output limit set too low shows up here.
+                        status, reason = as_category(response.status), unfinished_reason(response)
+                        attempt.attributes["result"] = f"{status}_{reason}"
+                        limit = request.get("max_output_tokens", 0)
+                        used = {key: reported[key] for key in ("output_tokens", "reasoning_tokens") if key in reported}
+                        log.warning(
+                            "Model response %s not completed (%s, %s): output tokens %s of %s, reasoning tokens %s",
+                            ctx.correlation_id,
+                            status,
+                            reason,
+                            used.get("output_tokens", "unknown"),
+                            limit,
+                            used.get("reasoning_tokens", "unknown"),
+                            extra={
+                                "correlation_id": ctx.correlation_id,
+                                "event": "model_incomplete",
+                                "response_status": status,
+                                "incomplete_reason": reason,
+                                "max_output_tokens": limit,
+                                **used,
+                            },
+                        )
+                        raise RuntimeError("Model response incomplete or blocked; no answer released.")
+                    calls = [item for item in response.output if item.type == "function_call"]
+                    kind = "tool_selection" if calls else "answer"
+                    attempt.keys, attempt.attributes["round_kind"] = (f"model_{kind}",), kind
+                    return response, calls
+            wait = retry_wait(error, retries) if retries < MAX_RETRIES else None
+            if wait is None:
+                # Never fall back to the scripted assistant: say the model is unavailable.
+                log.warning("Model call failed (%s)", type(error).__name__)
+                raise ModelUnavailable() from error
+            category = failure(error)
+            throttled = category == "status_429"
+            log.warning(
+                "Model call %s: %s, retry %d of %d in %.1f s",
+                ctx.correlation_id,
+                category,
+                retries + 1,
+                MAX_RETRIES,
+                wait,
+                extra={
+                    "correlation_id": ctx.correlation_id,
+                    "event": "model_retry",
+                    "error_category": "throttled" if throttled else category,
+                    "status_code": getattr(error, "status_code", 0),
+                    "wait_ms": round(wait * 1000),
+                    "retry": retries + 1,
+                    **rate_limits(error),
+                },
+            )
+            with ctx.timings.stage("model_wait", "model_throttled" if throttled else "model_retry", result=category):
+                sleep(wait)
+        raise AssertionError("unreachable")
 
     def run(self, message: str, ctx: Context) -> Iterator[tuple[str, dict]]:
         ctx.assistant = "model"
         if "model_unavailable" in ctx.faults:
             raise ModelUnavailable()
-        history = ctx.store.history(ctx.session_id)
-        route(message, ctx)
+        with ctx.timings.stage("history"):
+            history = ctx.store.history(ctx.session_id)
+        with ctx.timings.stage("route"):
+            route(message, ctx)
+            # Only the domains this request needs: their instructions and their model tools, nothing else.
+            instructions = load_agent().instructions(ctx.domains)
+            tools = tool_definitions(ctx.offered)
         items: list[dict[str, Any]] = []
         for turn in history:
             items.extend(
@@ -398,22 +530,22 @@ class FoundryRunner:
                 ]
             )
         items.append({"role": "user", "content": message})
-        # Only the domains this request needs: their instructions and their model tools, nothing else.
-        instructions = load_agent().instructions(ctx.domains)
-        tools = tool_definitions(ctx.offered)
         repaired = False
         for _ in range(12):
-            response = self.create(
+            # A round whose output calls tools is the model selecting tools; a round without calls answers.
+            response, calls = self.create(
+                ctx,
                 model=self.deployment,
                 instructions=instructions,
                 input=cast(Any, items),
                 tools=cast(Any, tools),
                 store=False,
-                max_output_tokens=3000,
+                reasoning={"effort": self.reasoning_effort},
+                # The service keeps nothing (store=False), so the reasoning items passed back with the tool results
+                # carry the model's reasoning themselves, encrypted, and it continues from them.
+                include=["reasoning.encrypted_content"],
+                max_output_tokens=self.max_output_tokens,
             )
-            if response.status != "completed":
-                raise RuntimeError("Model response incomplete or blocked; no answer released.")
-            calls = [item for item in response.output if item.type == "function_call"]
             if calls:
                 items.extend(item.model_dump(exclude_none=True) for item in response.output)
                 for call in calls:
@@ -442,8 +574,9 @@ class FoundryRunner:
                             "content": "Your reply failed validation. Return the required "
                             "JSON, reference this turn's evidence, use no unsupported numbers or links, "
                             "never show internal ids, tenant ids or tool names (use display names), "
-                            "and never say a draft was created, scheduled or sent unless get_report_status "
-                            "confirmed it. Otherwise return not_in_data.",
+                            "never say a draft was created, scheduled or sent unless get_report_status "
+                            "confirmed it, and never say you opened, filtered or applied anything in the app: "
+                            "you can't. Otherwise return not_in_data.",
                         }
                     )
                     continue
@@ -455,3 +588,80 @@ class FoundryRunner:
             yield "reply", envelope(reply, ctx)
             return
         raise RuntimeError("Tool round limit reached; ask a narrower question.")
+
+
+def failure(error: Exception) -> str:
+    """A failed model call's category: its HTTP status, a timeout or a connection failure."""
+    if isinstance(error, APIStatusError):
+        return f"status_{error.status_code}"
+    if isinstance(error, APITimeoutError):
+        return "timeout"
+    if isinstance(error, APIConnectionError):
+        return "connection"
+    return "other"
+
+
+def as_category(value: Any) -> str:
+    """A value the service reports as a category, such as a status or reason; anything else is "unknown"."""
+    return value if isinstance(value, str) and re.fullmatch(r"[a-z][a-z0-9_]{0,39}", value) else "unknown"
+
+
+def unfinished_reason(response: Any) -> str:
+    """Why a response didn't complete: its incomplete reason (max_output_tokens, content_filter) or error code."""
+    details, error = getattr(response, "incomplete_details", None), getattr(response, "error", None)
+    return as_category(getattr(details, "reason", None) or getattr(error, "code", None))
+
+
+def retry_after(headers: Mapping[str, str]) -> float | None:
+    """Seconds the service asked to wait, read as the OpenAI SDK reads them."""
+    for name, divisor in (("retry-after-ms", 1000), ("retry-after", 1)):
+        value = headers.get(name)
+        if value is None:
+            continue
+        try:
+            delay = float(value)
+        except ValueError:
+            continue
+        if delay == math.inf and value.strip().lower() not in ("inf", "+inf", "infinity", "+infinity"):
+            return MAX_RETRY_AFTER + 1
+        return delay / divisor
+    try:
+        parsed = email.utils.parsedate_tz(headers.get("retry-after", ""))
+        return None if parsed is None else float(email.utils.mktime_tz(parsed) - time.time())
+    except (TypeError, ValueError, OverflowError, OSError):
+        return None
+
+
+def retry_wait(error: Exception, retries: int) -> float | None:
+    """Seconds to wait before retrying a failed model call, or None when the OpenAI SDK would not retry it.
+
+    Retried: timeouts, connection failures, and 408, 409, 429 and 5xx responses unless x-should-retry says
+    otherwise. A Retry-After of more than two minutes is not waited for. Without one, the wait backs off
+    exponentially from half a second, at most 8 seconds, less up to 25% jitter.
+    """
+    after = None
+    if isinstance(error, APIStatusError):
+        headers = error.response.headers
+        after = retry_after(headers)
+        if after is not None and math.isfinite(after) and after > MAX_RETRY_AFTER:
+            return None
+        flag = headers.get("x-should-retry")
+        status = error.status_code
+        if flag == "false" or (flag != "true" and status not in (408, 409, 429) and status < 500):
+            return None
+    elif not isinstance(error, APIConnectionError):
+        return None
+    if after is not None and math.isfinite(after) and 0 < after <= MAX_RETRY_AFTER:
+        return after
+    return min(INITIAL_RETRY_DELAY * 2.0**retries, MAX_RETRY_DELAY) * (1 - 0.25 * random())
+
+
+def rate_limits(error: Exception) -> dict[str, int]:
+    """The remaining tokens and requests the service reported with a failed call, when it did."""
+    headers = error.response.headers if isinstance(error, APIStatusError) else {}
+    found = {}
+    for name in ("tokens", "requests"):
+        value = headers.get(f"x-ratelimit-remaining-{name}", "")
+        if value.isdecimal():
+            found[f"ratelimit_remaining_{name}"] = int(value)
+    return found

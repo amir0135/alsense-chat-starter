@@ -50,9 +50,14 @@ def main() -> None:
     parser.add_argument("--name", default="alsense-demo")
     parser.add_argument("--location", default="northeurope")
     parser.add_argument("--ai-location", default="swedencentral")
-    parser.add_argument("--model", default="gpt-5-mini")
-    parser.add_argument("--model-version", default="2025-08-07")
-    parser.add_argument("--model-capacity", type=int, default=10)
+    parser.add_argument("--model", default="gpt-6.1-terra", help="Model name, also used as the deployment name.")
+    parser.add_argument("--model-version", default="2026-10-26")
+    parser.add_argument(
+        "--model-capacity",
+        type=int,
+        default=250,
+        help="Thousands of tokens per minute; needs that much quota for the model in the model region.",
+    )
     parser.add_argument("--image-tag", help="Reuse an existing image in this stack's registry instead of rebuilding.")
     parser.add_argument("--what-if", action="store_true")
     parser.add_argument("--yes", action="store_true", help="Approve resource creation after previewing with --what-if.")

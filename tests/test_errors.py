@@ -80,7 +80,7 @@ def test_foundry_runner_reports_an_unreachable_model_instead_of_falling_back(tmp
         raise ConnectionError("network down")
 
     runner = FoundryRunner.__new__(FoundryRunner)
-    runner.deployment = "test"
+    runner.deployment, runner.reasoning_effort, runner.max_output_tokens = "test", "high", 8000
     runner.client = SimpleNamespace(responses=SimpleNamespace(create=broken))
     with pytest.raises(ModelUnavailable):
         list(runner.run("My sites?", Context(services, store, session_id, user)))

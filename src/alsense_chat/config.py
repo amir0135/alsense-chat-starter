@@ -4,10 +4,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .adapters.synthetic.faults import FAULTS
+from .usage import PRICES, Prices, price, prices
 
 ROOT = Path(__file__).resolve().parent
 FEATURES = frozenset({"reports", "troubleshooting", "support"})
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
+# The reasoning efforts the Responses API accepts. Not every model supports every value; the service refuses one
+# that the deployment doesn't support.
+REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
+# Output tokens per model call, reasoning included: below the minimum, reasoning alone can use the whole limit.
+OUTPUT_TOKENS = (1000, 128000)
 
 # Every variable load_settings reads. tests/test_config.py keeps this list and .env.example in sync.
 ENVIRONMENT = (
@@ -24,6 +30,9 @@ ENVIRONMENT = (
     "DEMO_ACCESS_CODE",
     "FOUNDRY_PROJECT_ENDPOINT",
     "MODEL_DEPLOYMENT",
+    "MODEL_REASONING_EFFORT",
+    "MODEL_MAX_OUTPUT_TOKENS",
+    *PRICES.values(),
     "FLOWS_FILE",
     "SCENARIOS_FILE",
     "ENABLE_REPORTS",
@@ -44,6 +53,12 @@ class Settings:
     agent_mode: str = "demo"
     foundry_endpoint: str = ""
     deployment: str = ""
+    reasoning_effort: str = "high"
+    max_output_tokens: int = 8000
+    # US dollars per million tokens, for the estimated cost. None: not set, nothing is estimated.
+    price_input: float | None = None
+    price_cached_input: float | None = None
+    price_output: float | None = None
     cloud_demo: bool = False
     demo_access_code: str = ""
     telemetry_connection: str = ""
@@ -65,6 +80,20 @@ class Settings:
             found.append("AGENT_MODE must be demo (scripted, no AI model) or foundry (Azure AI Foundry).")
         if self.agent_mode == "foundry" and not (self.foundry_endpoint and self.deployment):
             found.append("Foundry mode requires FOUNDRY_PROJECT_ENDPOINT and MODEL_DEPLOYMENT.")
+        if self.reasoning_effort not in REASONING_EFFORTS:
+            found.append(f"MODEL_REASONING_EFFORT must be one of {', '.join(REASONING_EFFORTS)}.")
+        if not OUTPUT_TOKENS[0] <= self.max_output_tokens <= OUTPUT_TOKENS[1]:
+            found.append(f"MODEL_MAX_OUTPUT_TOKENS must be between {OUTPUT_TOKENS[0]} and {OUTPUT_TOKENS[1]}.")
+        rates = {"input": self.price_input, "cached_input": self.price_cached_input, "output": self.price_output}
+        for key, value in rates.items():
+            try:
+                price(PRICES[key], None if value is None else str(value))
+            except ValueError as exc:
+                found.append(str(exc))
+        try:
+            prices(rates)
+        except ValueError as exc:
+            found.append(str(exc))
         if self.data_source not in {"synthetic", "alsense"}:
             found.append("DATA_SOURCE must be synthetic or alsense.")
         if self.synthetic_faults and self.data_source != "synthetic":
@@ -85,6 +114,16 @@ class Settings:
         if self.cloud_demo and len(self.demo_access_code) < 32:
             found.append("Cloud demo requires a high-entropy DEMO_ACCESS_CODE of at least 32 characters.")
         return found
+
+    @property
+    def prices(self) -> Prices | None:
+        """The model prices for the estimated cost, when all of them are set."""
+        try:
+            return prices(
+                {"input": self.price_input, "cached_input": self.price_cached_input, "output": self.price_output}
+            )
+        except ValueError:
+            return None
 
     def validate(self) -> None:
         found = self.problems()
@@ -124,6 +163,11 @@ def load_settings(environ: Mapping[str, str] | None = None, *, validate: bool = 
         agent_mode=get("AGENT_MODE", "demo"),
         foundry_endpoint=get("FOUNDRY_PROJECT_ENDPOINT", ""),
         deployment=get("MODEL_DEPLOYMENT", ""),
+        reasoning_effort=get("MODEL_REASONING_EFFORT", "high").lower(),
+        max_output_tokens=number("MODEL_MAX_OUTPUT_TOKENS", "8000"),
+        price_input=price("MODEL_PRICE_INPUT", get("MODEL_PRICE_INPUT", "")),
+        price_cached_input=price("MODEL_PRICE_CACHED_INPUT", get("MODEL_PRICE_CACHED_INPUT", "")),
+        price_output=price("MODEL_PRICE_OUTPUT", get("MODEL_PRICE_OUTPUT", "")),
         cloud_demo=flag("CLOUD_DEMO", "false"),
         demo_access_code=get("DEMO_ACCESS_CODE", ""),
         telemetry_connection=get("APPLICATIONINSIGHTS_CONNECTION_STRING", ""),

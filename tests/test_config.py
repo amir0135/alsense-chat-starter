@@ -5,6 +5,7 @@ import pytest
 
 from alsense_chat.adapters.synthetic import FAULTS
 from alsense_chat.config import ENVIRONMENT, FEATURES, Settings, load_settings
+from alsense_chat.usage import Prices
 
 ROOT = Path(__file__).resolve().parents[1]
 # Read by libraries or tooling rather than by load_settings, but documented for operators.
@@ -35,6 +36,8 @@ def test_defaults_need_no_environment():
     settings = load_settings({})
     assert (settings.app_port, settings.log_level, settings.db) == (8001, "INFO", "data/sessions.sqlite3")
     assert not settings.reset_on_start
+    assert (settings.reasoning_effort, settings.max_output_tokens) == ("high", 8000)
+    assert settings.prices is None, "no model prices are shipped"
 
 
 def test_values_are_parsed():
@@ -45,8 +48,15 @@ def test_values_are_parsed():
             "LOG_LEVEL": "debug",
             "RESET_DEMO_DATA_ON_START": "true",
             "APP_PORT": "9001",
+            "MODEL_REASONING_EFFORT": "XHigh",
+            "MODEL_MAX_OUTPUT_TOKENS": "16000",
+            "MODEL_PRICE_INPUT": "2",
+            "MODEL_PRICE_CACHED_INPUT": " 0.5 ",
+            "MODEL_PRICE_OUTPUT": "8",
         }
     )
+    assert settings.prices == Prices(input=2.0, cached_input=0.5, output=8.0)
+    assert (settings.reasoning_effort, settings.max_output_tokens) == ("xhigh", 16000)
     assert settings.synthetic_faults == {"api_timeout", "report_failed"}
     assert settings.features == {"troubleshooting", "support"}
     assert (settings.log_level, settings.reset_on_start, settings.app_port) == ("DEBUG", True, 9001)
@@ -62,6 +72,17 @@ def test_values_are_parsed():
         ({"DATA_SOURCE": "mainframe"}, "DATA_SOURCE must be synthetic or alsense"),
         ({"SYNTHETIC_FAULTS": "gremlins"}, "unknown names"),
         ({"SCENARIOS_FILE": "missing.local.yaml"}, "SCENARIOS_FILE must point"),
+        ({"MODEL_REASONING_EFFORT": "extreme"}, "MODEL_REASONING_EFFORT must be one of none, minimal, low, medium"),
+        ({"MODEL_MAX_OUTPUT_TOKENS": "999"}, "MODEL_MAX_OUTPUT_TOKENS must be between 1000 and 128000"),
+        ({"MODEL_MAX_OUTPUT_TOKENS": "128001"}, "MODEL_MAX_OUTPUT_TOKENS must be between 1000 and 128000"),
+        ({"MODEL_MAX_OUTPUT_TOKENS": "8k"}, "MODEL_MAX_OUTPUT_TOKENS must be a whole number"),
+        ({"MODEL_PRICE_INPUT": "cheap"}, "MODEL_PRICE_INPUT must be a non-negative number of US dollars"),
+        ({"MODEL_PRICE_OUTPUT": "-1"}, "MODEL_PRICE_OUTPUT must be a non-negative number of US dollars"),
+        (
+            {"MODEL_PRICE_INPUT": "2", "MODEL_PRICE_OUTPUT": "8"},
+            "Set MODEL_PRICE_INPUT, MODEL_PRICE_CACHED_INPUT and MODEL_PRICE_OUTPUT together, or none. "
+            "Missing: MODEL_PRICE_CACHED_INPUT.",
+        ),
     ],
 )
 def test_bad_values_fail_clearly(environ, problem):

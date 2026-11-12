@@ -38,6 +38,8 @@ synthetic services, and label the mix on `/system`. Never fall back to synthetic
 
 Guided checks stop with the explicit reason; a failed lookup is never treated as a "no". Failed confirmations
 say "Your request was prepared but not submitted." The synthetic `SYNTHETIC_FAULTS` switches demonstrate every row.
+The confirmation and status endpoints answer with the category's HTTP status (401, 403, 404, 501, 503 or 504)
+and name the category in an `X-Error-Category` header.
 
 ## Components
 
@@ -150,7 +152,9 @@ completed                 → clickable download link, with "Expires 24 hours af
   - Job status (processing, completed, failed with a user-safe reason).
   - The download link for the finished report and its expiry time (`completed_at`, `expires_at`). The widget shows
     the times the service returns, so a different link lifetime shows correctly. Approve the link's origin in
-    `safe_link()`.
+    `safe_link()`. A job status with an unapproved link fails as `unavailable`. A confirmation keeps the
+    submission, since the service accepted it, but blanks the link and logs an `unapproved_link` warning without
+    the URL.
 
 ### Scheduled reports
 
@@ -199,7 +203,8 @@ Preparation is local: guided checks and the support form produce a draft that th
 
 - **Not implemented.** The assistant does not operate the host application's screens yet. The capability manifest
   and the host contracts will come from the frontend team; until then the empty `frontend_actions` agent module
-  (`status: future`) only reserves the domain, and no schema is defined.
+  (`status: future`) only reserves the domain, and no schema is defined. The reply guard meanwhile rejects any
+  reply that says the assistant opened, filtered or applied something in the app.
 - **Intended flow:**
 
 ```text

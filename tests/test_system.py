@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from helpers import app_client, flow, login
+from helpers import app_client, flow, foundry, login
 
 ROOT = Path(__file__).resolve().parents[1]
 STATES = {"synthetic", "configured", "unavailable", "future", "disabled", "attention"}
@@ -53,8 +53,20 @@ def test_system_shows_demo_ready_and_flow_versions(tmp_path):
     ]
     assert status["version"] and status["commit"]
     labels = {item["label"]: item for item in status["items"]}
-    assert labels["Session database"]["value"] == "Connected · SQLite schema v3"
+    assert labels["Session database"]["value"] == "Connected · SQLite schema v6"
     assert labels["Assistant"]["value"] == "Scripted demo assistant (no AI model)"
+
+
+def test_system_shows_the_model_deployment_and_its_reasoning(tmp_path, monkeypatch):
+    settings = {**foundry(monkeypatch, []), "deployment": "gpt-6.1-terra"}
+    with app_client(tmp_path, **settings) as client:
+        default = {item["id"]: item for item in client.get("/api/system").json()["items"]}["assistant"]
+    with app_client(tmp_path, **settings, reasoning_effort="low", max_output_tokens=4000) as client:
+        changed = {item["id"]: item for item in client.get("/api/system").json()["items"]}["assistant"]
+    assert (default["value"], default["state"]) == ("Azure AI Foundry · gpt-6.1-terra · reasoning high", "configured")
+    assert "up to 8000 output tokens per call including reasoning" in default["detail"]
+    assert changed["value"] == "Azure AI Foundry · gpt-6.1-terra · reasoning low"
+    assert "up to 4000 output tokens" in changed["detail"]
 
 
 def test_system_flags_global_faults_and_disabled_features(tmp_path):

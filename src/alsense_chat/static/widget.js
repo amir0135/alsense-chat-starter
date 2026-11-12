@@ -16,6 +16,11 @@ let scenarios = [];
 let scenariosState = "loading";
 let activeScenario = null;
 let sessionScenario = "";
+/* Whether the backend's data is synthetic (/api/health). Results say "synthetic" only when it is. */
+let syntheticData = true;
+let dataSourceKnown = false;
+let reportTypesRequest = null;
+const reportTypeNames = new Map();
 const siteAlarms = new Map();
 const actionCards = new WeakMap();
 const replyChoices = new WeakMap();
@@ -28,6 +33,8 @@ const STATUS_LABELS = {
   out_of_scope: "Outside this demo",
   error: "Couldn’t complete",
 };
+/* The same labels for data that isn't synthetic. */
+const LIVE_STATUS_LABELS = { not_in_data: "Not in the available data", out_of_scope: "Out of scope" };
 /* Failures worth handing to a person: a support request can carry what was tried. */
 const SUPPORT_CATEGORIES = new Set(["unavailable", "timeout", "stale", "not_found"]);
 const REPORT_STATES = {
@@ -37,6 +44,7 @@ const REPORT_STATES = {
   failed: "Failed",
   scheduled: "Scheduled (synthetic)",
 };
+const LIVE_REPORT_STATES = { completed: "Ready", scheduled: "Scheduled" };
 const TOOL_PROGRESS = {
   get_permitted_sites: "Checking the sites you can access…",
   search_docs: "Looking through the operations guidance…",
@@ -67,6 +75,23 @@ const ACTION_COPY = {
     done: "Submitted · synthetic", sent: "Submitted to the synthetic demo. No real support request was sent.",
   },
 };
+const LIVE_ACTION_COPY = {
+  report: {
+    confirm: "Confirm report", retry: "Retry report", final: "Report ready", link: "Open report",
+    pending: "Nothing has been sent. Confirm below to create this report.",
+    done: "Submitted", sent: "Submitted to the report service.",
+  },
+  scheduled_report: {
+    confirm: "Confirm schedule", retry: "Retry schedule", link: "Open schedule",
+    pending: "Nothing is scheduled yet. Confirm below to create this schedule.",
+    done: "Scheduled", sent: "Scheduled with the report service.",
+  },
+  ticket: {
+    confirm: "Confirm request", retry: "Retry request", final: "Request received", link: "Open request",
+    pending: "Nothing has been sent. Confirm below to submit this request.",
+    done: "Submitted", sent: "Submitted to the support service.",
+  },
+};
 const ACTION_STATES = {
   prepared: { badge: "Not sent", steps: ["is-done", "is-current", ""] },
   submitting: { badge: "Submitting…", steps: ["is-done", "is-busy", ""] },
@@ -82,8 +107,9 @@ const REPORT_NOTES = {
 const FORMAT_LABELS = { pdf: "PDF", csv: "CSV", xlsx: "Excel" };
 const FREQUENCY_LABELS = { daily: "Daily", weekly: "Weekly", monthly: "Monthly" };
 const EMAIL = /^[A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
-const STATUS_POLLS = 8;
-const STATUS_POLL_MS = 1500;
+/* A running job is checked again soon, then less often, for up to five minutes. */
+const STATUS_POLL = { first: 1500, growth: 1.5, longest: 10000, limit: 5 * 60 * 1000 };
+const followedReports = new WeakSet();
 const DEFAULT_PERIOD = "last-30";
 const PERIODS = {
   "last-7": (today) => [addDays(today, -6), today],
@@ -161,10 +187,43 @@ function siteName(siteId) {
   return user?.sites?.find((site) => site.id === siteId)?.name || "";
 }
 
+function statusLabel(status, synthetic) {
+  return (!synthetic && LIVE_STATUS_LABELS[status]) || STATUS_LABELS[status] || "Answer";
+}
+
+function reportStateLabel(state, synthetic) {
+  return (!synthetic && LIVE_REPORT_STATES[state]) || REPORT_STATES[state] || "unavailable";
+}
+
+function actionCopy(kind, synthetic) {
+  return synthetic ? ACTION_COPY[kind] : { ...ACTION_COPY[kind], ...LIVE_ACTION_COPY[kind] };
+}
+
+/* Report type names come from the user's report catalog, or from a catalog lookup shown in a reply. */
+function rememberReportTypes(items) {
+  for (const item of Array.isArray(items) ? items : []) {
+    if (item?.id && item?.label) reportTypeNames.set(item.id, item.label);
+  }
+}
+
+/* One catalog request per session: a request from an earlier session doesn't fill in this one's catalog. */
+function loadReportTypes() {
+  if (reportTypesRequest) return reportTypesRequest;
+  const request = api("/api/report-types").then((response) => response.json()).then((items) => {
+    if (request !== reportTypesRequest) return reportTypes || [];
+    reportTypes = Array.isArray(items) ? items : [];
+    rememberReportTypes(reportTypes);
+    return reportTypes;
+  });
+  reportTypesRequest = request;
+  request.catch(() => {
+    if (request === reportTypesRequest) reportTypesRequest = null;
+  });
+  return request;
+}
+
 function reportTypeLabel(typeId) {
-  return reportTypes?.find((item) => item.id === typeId)?.label
-    || ({ "temperature-log": "Temperature log", "alarm-history": "Alarm history", "site-status": "Site status" })[typeId]
-    || "Report";
+  return reportTypes?.find((item) => item.id === typeId)?.label || reportTypeNames.get(typeId) || "Report";
 }
 
 function formatLabel(format) {
@@ -368,7 +427,7 @@ function renderDocuments(data, parent) {
 }
 
 /* The confirmed result: a download link with its expiry, a schedule's first run, or why there is none. */
-function renderReportResult(container, status, { live = false } = {}) {
+function renderReportResult(container, status, { live = false, stopped = false, synthetic = true } = {}) {
   container.querySelector(".report-result")?.remove();
   const box = node("div", "report-result");
   const result = status?.result || {};
@@ -378,7 +437,7 @@ function renderReportResult(container, status, { live = false } = {}) {
       const link = node("a", "download-link");
       const glyph = node("span", "download-glyph", "↓");
       glyph.setAttribute("aria-hidden", "true");
-      link.append(glyph, document.createTextNode("Download synthetic report"));
+      link.append(glyph, document.createTextNode(synthetic ? "Download synthetic report" : "Download report"));
       link.href = result.url;
       link.target = "_blank";
       link.rel = "noopener noreferrer";
@@ -390,42 +449,71 @@ function renderReportResult(container, status, { live = false } = {}) {
     if (live) note.append(node("span", "inline-spinner"));
     note.append(document.createTextNode(live
       ? "Preparing the report. The download link appears here when it’s ready."
-      : "Still being prepared. Check again in a moment for the download link."));
+      : stopped
+        ? `Still being prepared after ${Math.round(STATUS_POLL.limit / 60000)} minutes, so it’s no longer checked `
+          + "automatically. Use Check status to look again."
+        : "Still being prepared. Check again in a moment for the download link."));
     box.append(note);
   } else if (status?.state === "failed") {
     box.append(node("p", "download-note is-failed", "The report job failed, so there’s no file to download."));
   } else if (status?.state === "scheduled") {
     const first = dayLabel(result.next_run);
     box.append(node("p", "download-note", first ? `First report on ${first}.` : "The schedule is active."));
-    if (approvedLink(result.url)) addLink(box, "Open synthetic schedule", result.url);
+    if (approvedLink(result.url)) addLink(box, synthetic ? "Open synthetic schedule" : "Open schedule", result.url);
   } else {
     return;
   }
   container.append(box);
 }
 
-function renderStatus(data, parent) {
+function renderStatus(data, parent, synthetic) {
   const state = typeof data?.state === "string" ? data.state : "";
   const subject = data?.kind === "scheduled_report" ? "Schedule" : "Report";
-  parent.append(node("p", "source-excerpt", `${subject} status: ${REPORT_STATES[state] || "unavailable"}.`));
+  parent.append(node("p", "source-excerpt", `${subject} status: ${reportStateLabel(state, synthetic)}.`));
   if (typeof data?.result?.message === "string") parent.append(node("p", "source-excerpt", data.result.message));
-  renderReportResult(parent, data);
+  renderReportResult(parent, data, { synthetic });
 }
 
 async function reportStatus(actionId) {
   return (await api(`/api/actions/${encodeURIComponent(actionId)}/status`)).json();
 }
 
-/* Shows the result as soon as the service has it; a job still running is checked again a few times. */
-async function followReport(actionId, container) {
-  for (let attempt = 0; attempt < STATUS_POLLS; attempt += 1) {
-    const status = await reportStatus(actionId);
-    const last = attempt === STATUS_POLLS - 1;
-    renderReportResult(container, status, { live: status.state === "processing" && !last });
-    if (status.state !== "processing" || !container.isConnected) return status;
-    if (!last) await new Promise((resolve) => setTimeout(resolve, STATUS_POLL_MS));
+function pageVisible() {
+  if (!document.hidden) return Promise.resolve();
+  return new Promise((resolve) => {
+    const shown = () => {
+      if (document.hidden) return;
+      document.removeEventListener("visibilitychange", shown);
+      resolve();
+    };
+    document.addEventListener("visibilitychange", shown);
+  });
+}
+
+/* Shows the result as soon as the service has it. A job still running is checked again, less often over time,
+   while its card stays in the conversation of the same session and the page is visible: one loop per card. It stops
+   on a result, an error (the caller shows it) or a new session, and after five minutes says so. */
+async function followReport(actionId, container, synthetic = true) {
+  if (followedReports.has(container)) return null;
+  followedReports.add(container);
+  const session = token;
+  const started = performance.now();
+  const current = () => token === session && container.isConnected;
+  try {
+    for (let delay = STATUS_POLL.first; ; delay = Math.min(delay * STATUS_POLL.growth, STATUS_POLL.longest)) {
+      const status = await reportStatus(actionId);
+      if (!current()) return null;
+      const running = status.state === "processing";
+      const again = running && performance.now() - started + delay <= STATUS_POLL.limit;
+      renderReportResult(container, status, { live: again, stopped: running && !again, synthetic });
+      if (!again) return status;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      await pageVisible();
+      if (!current()) return null;
+    }
+  } finally {
+    followedReports.delete(container);
   }
-  return null;
 }
 
 function renderHealth(data, parent) {
@@ -460,7 +548,7 @@ function renderEvidence(reply, parent) {
         renderDocuments(source.data, content);
         break;
       case "get_report_status":
-        renderStatus(source.data, content);
+        renderStatus(source.data, content, reply.synthetic !== false);
         break;
       case "check_site_health":
         renderHealth(source.data, content);
@@ -599,9 +687,9 @@ function actionRows(kind, payload) {
   return [["Site", site], ["Alarm", payload.alarm_id], ["Summary", payload.summary], ["Steps tried", payload.steps_tried]];
 }
 
-function renderAction(action, parent) {
+function renderAction(action, parent, synthetic = true) {
   const kind = ACTION_COPY[action.kind] ? action.kind : "ticket";
-  const copy = ACTION_COPY[kind];
+  const copy = actionCopy(kind, synthetic);
   const reporting = kind !== "ticket";
   const payload = action.payload || {};
   const card = node("section", "action-card");
@@ -629,7 +717,13 @@ function renderAction(action, parent) {
 
   const details = node("dl", "action-details");
   for (const [label, value] of actionRows(kind, payload)) {
-    if (value) details.append(node("dt", "", label), node("dd", "", value));
+    if (!value) continue;
+    const cell = node("dd", "", value);
+    details.append(node("dt", "", label), cell);
+    /* A draft prepared in chat can name a report type the catalog hasn't been loaded for yet. */
+    if (reporting && label === "Report" && !reportTypes && !reportTypeNames.has(payload.report_type)) {
+      loadReportTypes().then(() => { cell.textContent = reportTypeLabel(payload.report_type); }).catch(() => {});
+    }
   }
 
   const buttons = node("div", "action-buttons");
@@ -660,7 +754,7 @@ function renderAction(action, parent) {
     kind === "scheduled_report" ? "Check the status of this schedule" : "Check the status of this report");
   const result = node("div", "card-result");
 
-  /* Returns whether the synthetic submission succeeded; failures stay visible on the card. */
+  /* Returns whether the submission succeeded; failures stay visible on the card. */
   const confirmAction = async () => {
     if (card.dataset.state !== "prepared" && card.dataset.state !== "failed") return false;
     setState("submitting");
@@ -691,10 +785,10 @@ function renderAction(action, parent) {
         status.addEventListener("click", () => checkStatus().catch((error) => showError(error.message)));
         buttons.append(status);
         if (kind === "scheduled_report") {
-          renderReportResult(result, { state: "scheduled", result: submission });
+          renderReportResult(result, { state: "scheduled", result: submission }, { synthetic });
         } else {
           /* The link is the point of the report: fetch it right away instead of waiting for "Check status". */
-          followReport(action.id, result).catch((error) => {
+          followReport(action.id, result, synthetic).catch((error) => {
             result.replaceChildren(node("p", "download-note is-failed",
               `${error.message} Use Check status to try again.`));
           });
@@ -714,7 +808,7 @@ function renderAction(action, parent) {
     }
   };
   const editAction = async () => {
-    await openDraft(kind, payload);
+    if (!(await openDraft(kind, payload))) return false;
     replacingCard = card;
     return true;
   };
@@ -878,7 +972,8 @@ function renderReply(reply) {
   const body = node("div", "assistant-body");
   const heading = node("div", "answer-heading");
   heading.append(node("strong", "", "Operations assistant"));
-  heading.append(node("span", `answer-status ${reply.status || "answer"}`, STATUS_LABELS[reply.status] || "Answer"));
+  const synthetic = reply.synthetic !== false;
+  heading.append(node("span", `answer-status ${reply.status || "answer"}`, statusLabel(reply.status, synthetic)));
   body.append(heading);
   if (flow && flow.kind !== "menu") body.append(flowMeta(flow));
   textParagraphs(body, reply.text, "answer-text");
@@ -887,8 +982,11 @@ function renderReply(reply) {
     renderEvidence({ ...reply, sources: (reply.sources || []).filter((source) => cited.has(source.source_id)) }, body);
     renderFlow(flow, body);
   } else {
+    for (const source of reply.sources || []) {
+      if (source?.tool === "list_report_types") rememberReportTypes(source.data);
+    }
     renderEvidence(reply, body);
-    for (const action of reply.actions || []) renderAction(action, body);
+    for (const action of reply.actions || []) renderAction(action, body, synthetic);
     renderChoices(reply, body);
     renderBuilderPrompt(reply, body);
     renderFollowUps(reply, body);
@@ -898,6 +996,99 @@ function renderReply(reply) {
   $("messages").append(article);
   setActiveFlow(flow);
   scrollToLatest();
+  return body;
+}
+
+const FEEDBACK_REASONS = {
+  incorrect: "Incorrect",
+  incomplete: "Incomplete",
+  too_slow: "Too slow",
+  other: "Something else",
+};
+/* Guided-check steps still waiting for an answer, and the menu of checks, are not answers yet. */
+const WAITING_FLOW_KINDS = new Set(["menu", "question", "site", "confirm"]);
+
+function thumbIcon() {
+  const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  icon.setAttribute("viewBox", "0 0 20 20");
+  icon.setAttribute("aria-hidden", "true");
+  icon.setAttribute("class", "thumb-icon");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", "M3 9h2.5v8H3zM5.5 9.5l3-6c.4-.9 1.7-.8 2 .2.2.5.2 1 .1 1.5L10 8h5.2c1.1 0 1.9 1 1.7 2.1l-1 5.3c-.2 1-1 1.6-2 1.6H5.5");
+  icon.append(path);
+  return icon;
+}
+
+/* Thumbs on a completed answer, saved against its answer id. The rating can change, and a thumbs-down can add
+   one reason from a fixed list. Saving never blocks the conversation: a failure shows a short note instead. */
+function renderFeedback(reply, parent) {
+  if (typeof reply.answer_id !== "string" || WAITING_FLOW_KINDS.has(reply.flow?.kind)) return;
+  const box = node("div", "answer-feedback");
+  const group = (className, promptText, key) => {
+    const element = node("div", className);
+    const prompt = node("span", "feedback-prompt", promptText);
+    prompt.id = `feedback-${key}-${reply.answer_id}`;
+    element.setAttribute("role", "group");
+    element.setAttribute("aria-labelledby", prompt.id);
+    element.append(prompt);
+    return element;
+  };
+  const row = group("feedback-row", "Was this answer useful?", "rating");
+  const buttons = {};
+  for (const [rating, label] of [["up", "Helpful"], ["down", "Not helpful"]]) {
+    const button = node("button", `feedback-button feedback-${rating}`);
+    button.type = "button";
+    button.setAttribute("aria-pressed", "false");
+    button.append(thumbIcon(), document.createTextNode(label));
+    buttons[rating] = button;
+    row.append(button);
+  }
+  const reasons = group("feedback-reasons", "What went wrong? (optional)", "reason");
+  reasons.hidden = true;
+  const reasonButtons = {};
+  for (const [reason, label] of Object.entries(FEEDBACK_REASONS)) {
+    const button = node("button", "feedback-reason", label);
+    button.type = "button";
+    button.setAttribute("aria-pressed", "false");
+    reasonButtons[reason] = button;
+    reasons.append(button);
+  }
+  /* A live region from the start, so each result is announced, including a repeated one. */
+  const note = node("p", "feedback-note");
+  note.setAttribute("role", "status");
+  box.append(row, reasons, note);
+
+  let saved = { rating: "", reason: null };
+  let saving = false;
+  const save = async (rating, reason = null) => {
+    if (saving || (rating === saved.rating && reason === saved.reason)) return;
+    saving = true;
+    box.setAttribute("aria-busy", "true");
+    note.textContent = "";
+    try {
+      const response = await api(`/api/answers/${encodeURIComponent(reply.answer_id)}/feedback`,
+        reason ? { rating, reason } : { rating });
+      const result = await response.json();
+      saved = { rating: result.rating, reason: result.reason || null };
+      note.textContent = "Thanks for the feedback.";
+      note.classList.remove("is-failed");
+    } catch {
+      note.textContent = "Your feedback couldn’t be saved. Try again.";
+      note.classList.add("is-failed");
+    } finally {
+      saving = false;
+      box.removeAttribute("aria-busy");
+      for (const [value, button] of Object.entries(buttons)) button.setAttribute("aria-pressed", String(saved.rating === value));
+      for (const [value, button] of Object.entries(reasonButtons)) button.setAttribute("aria-pressed", String(saved.reason === value));
+      reasons.hidden = saved.rating !== "down";
+    }
+  };
+  buttons.up.addEventListener("click", () => save("up"));
+  buttons.down.addEventListener("click", () => save("down", saved.rating === "down" ? saved.reason : null));
+  for (const [reason, button] of Object.entries(reasonButtons)) {
+    button.addEventListener("click", () => save("down", saved.reason === reason ? null : reason));
+  }
+  parent.append(box);
 }
 
 function scrollToLatest() {
@@ -925,9 +1116,47 @@ function renderFailure(container, message, retryText, retryDisplayText) {
   }
 }
 
+/* The widget's timings of one chat request in whole milliseconds since the question was sent, numbers only.
+   They go to the backend under the request's correlation id once the answer is on screen; failures are
+   ignored. Each mark is also a performance measure ("alsense chat …") for the browser's developer tools. */
+function chatTiming() {
+  const start = performance.now();
+  const ms = {};
+  let correlationId = "";
+  let shown = Promise.resolve();
+  const mark = (name) => {
+    if (name in ms) return;
+    ms[name] = Math.round(performance.now() - start);
+    try {
+      performance.measure(`alsense chat ${name}`, { start, duration: ms[name] });
+    } catch {
+      /* Browsers without measure options still record the numbers. */
+    }
+  };
+  return {
+    mark,
+    received(response) {
+      correlationId = response.headers.get("X-Correlation-ID") || "";
+      mark("headers");
+    },
+    /* The reply is in the page: measure once the browser has had a frame to lay it out and paint it. */
+    rendered() {
+      shown = new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0))).then(() => mark("rendered"));
+    },
+    report() {
+      if (!correlationId) return;
+      shown.then(() => api("/api/timings", { correlation_id: correlationId, ...ms })).catch(() => {});
+    },
+  };
+}
+
 async function send(message, displayText = message) {
   const questionText = message.trim();
-  if (!token) throw new Error("Start a synthetic demo session before asking a question.");
+  if (!token) {
+    throw new Error(syntheticData
+      ? "Start a synthetic demo session before asking a question."
+      : "Start a session in the left panel before asking a question.");
+  }
   if (busy) throw new Error("Wait for the current answer to finish.");
   if (!questionText) return;
   if (!/^\/flows?(\s|$)/.test(questionText)) setActiveFlow(null);
@@ -954,12 +1183,15 @@ async function send(message, displayText = message) {
   $("messages").append(assistant);
   scrollToLatest();
 
+  const timing = chatTiming();
   try {
     const response = await api("/api/chat", { message: questionText });
+    timing.received(response);
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
-    let receivedReply = false;
+    let received = null;
+    let failed = false;
     while (true) {
       const { value, done } = await reader.read();
       buffer += decoder.decode(value, { stream: !done });
@@ -971,17 +1203,24 @@ async function send(message, displayText = message) {
         const dataLine = lines.filter((line) => line.startsWith("data: ")).map((line) => line.slice(6)).join("\n");
         if (!dataLine) continue;
         const data = JSON.parse(dataLine);
+        timing.mark("first_event");
         if (eventName === "step") setProgress(assistant, TOOL_PROGRESS[data.tool] || "Checking the available information…");
         if (eventName === "reply") {
-          receivedReply = true;
+          timing.mark("reply");
           assistant.remove();
-          renderReply(data);
+          received = { reply: data, body: renderReply(data) };
+          timing.rendered();
         }
-        if (eventName === "error") throw new Error("The assistant couldn’t complete that answer. Please try again.");
+        if (eventName === "error") failed = true;
       }
       if (done) break;
     }
-    if (!receivedReply) throw new Error("The answer stream ended early. Please try again.");
+    /* Read to the end first: the backend completes its record of the request as the stream closes. */
+    if (failed) throw new Error("The assistant couldn’t complete that answer. Please try again.");
+    if (!received) throw new Error("The answer stream ended early. Please try again.");
+    /* Rating opens only now, so feedback always finds the request's complete record. */
+    renderFeedback(received.reply, received.body);
+    scrollToLatest();
     $("message").value = "";
     $("message").style.height = "auto";
     return true;
@@ -992,6 +1231,7 @@ async function send(message, displayText = message) {
   } finally {
     busy = false;
     updateSessionUI();
+    timing.report();
   }
 }
 
@@ -1024,7 +1264,31 @@ function updateSessionUI() {
   renderCoach();
   $("welcome-hint").textContent = active
     ? `Signed in as ${user.name}. Your questions stay scoped to ${user.sites.map((site) => site.name).join(", ")}.`
-    : "Start a synthetic session in the left panel to begin.";
+    : syntheticData ? "Start a synthetic session in the left panel to begin." : "Start a session in the left panel to begin.";
+}
+
+/* The page says "synthetic" until the backend reports another data source. */
+function applyDataSource(source) {
+  syntheticData = !source || source === "synthetic";
+  dataSourceKnown = true;
+  if (!syntheticData) {
+    $("data-note").textContent = "Data from the configured Alsense APIs";
+    $("welcome-intro").textContent =
+      "Ask a question in your own words. I’ll use your site data and show the sources behind my answer.";
+    $("sources-note").textContent = "AI can make mistakes. Check the cited sources.";
+    $("alarm-example").hidden = true;
+    $("draft-form").elements.alarm_id.placeholder = "";
+  }
+  updatePresenterTools();
+  updateSessionUI();
+}
+
+/* Scenarios are presenter tooling for the synthetic data: offer them only when one of them can run. */
+function updatePresenterTools() {
+  const offered = dataSourceKnown && syntheticData
+    && Array.isArray(scenarios) && scenarios.some((scenario) => !scenario.unavailable_reason);
+  $("open-scenarios").hidden = !offered;
+  $("welcome-presenting").hidden = !offered;
 }
 
 /* A fresh session always starts from a clean conversation. */
@@ -1033,6 +1297,8 @@ function applySession(session) {
   user = session.user;
   sessionScenario = session.scenario || "";
   reportTypes = null;
+  reportTypesRequest = null;
+  reportTypeNames.clear();
   replacingCard = null;
   lastFlowResult = null;
   siteAlarms.clear();
@@ -1077,6 +1343,8 @@ function switchUser() {
   sessionScenario = "";
   lastFlowResult = null;
   reportTypes = null;
+  reportTypesRequest = null;
+  reportTypeNames.clear();
   replacingCard = null;
   siteAlarms.clear();
   $("messages").replaceChildren();
@@ -1123,30 +1391,44 @@ function renderSiteField(selectedId) {
   for (const label of siteAlarms.get(user.sites[0].id) || []) pill.append(node("span", "alarm-chip", label));
 }
 
-function renderReportChoices(selectedId) {
-  const container = $("report-type-options");
+/* One select however long the catalog is; the selected type's details show beneath it. */
+function renderReportTypes(selectedId) {
+  const select = $("draft-report-type");
+  select.replaceChildren(...reportTypes.map((report) => {
+    const option = new Option(report.label || "Report", report.id);
+    option.dataset.label = option.text;
+    return option;
+  }));
   const selected = reportTypes.some((item) => item.id === selectedId) ? selectedId : reportTypes[0]?.id;
-  container.replaceChildren();
-  for (const report of reportTypes) {
-    const card = node("label", "choice-card");
-    const input = node("input");
-    input.type = "radio";
-    input.name = "report_type";
-    input.value = report.id;
-    input.checked = report.id === selected;
-    const mark = node("span", "choice-mark");
-    mark.setAttribute("aria-hidden", "true");
-    const copy = node("span", "choice-copy");
-    copy.append(node("strong", "", report.label || "Report"));
-    const formats = Array.isArray(report.formats) ? report.formats.map(formatLabel).join(", ") : "";
-    const note = node("small");
-    if (REPORT_NOTES[report.id]) note.append(document.createTextNode(`${REPORT_NOTES[report.id]}${formats ? " · " : ""}`));
-    if (formats) note.append(node("span", "nowrap", formats));
-    if (!report.schedule) note.append(node("span", "schedule-note", " · On demand only"));
-    if (note.childNodes.length) copy.append(note);
-    card.append(input, mark, copy);
-    container.append(card);
+  if (selected) select.value = selected;
+}
+
+/* The selected report type, unless it is unavailable in this mode. */
+function reportTypeValue() {
+  const select = $("draft-report-type");
+  return select.selectedOptions[0]?.disabled ? "" : select.value;
+}
+
+function describeReportType() {
+  const line = $("report-type-details");
+  line.replaceChildren();
+  const report = selectedReportType();
+  if (!report) return;
+  const parts = [];
+  /* These notes describe the synthetic report types. */
+  if (syntheticData && REPORT_NOTES[report.id]) parts.push(document.createTextNode(REPORT_NOTES[report.id]));
+  if (Array.isArray(report.formats) && report.formats.length) {
+    parts.push(node("span", "nowrap", report.formats.map(formatLabel).join(", ")));
   }
+  if (!report.schedule) parts.push(node("span", "schedule-note", "On demand only"));
+  parts.forEach((part, index) => line.append(...(index ? [document.createTextNode(" · "), part] : [part])));
+}
+
+/* The selected type decides the formats, the schedule options and the line beneath the select. */
+function syncReportType() {
+  syncFormats();
+  syncSchedule();
+  describeReportType();
 }
 
 function reportMode() {
@@ -1154,28 +1436,29 @@ function reportMode() {
 }
 
 function selectedReportType() {
-  const typeId = $("draft-form").querySelector('input[name="report_type"]:checked')?.value;
+  const typeId = reportTypeValue();
   return reportTypes?.find((item) => item.id === typeId) || null;
 }
 
-/* Scheduled mode offers only report types the service can schedule, with their frequencies and end date. */
+/* Scheduled mode offers only report types the service can schedule, with their frequencies and end date.
+   The others stay in the list, unavailable and marked "on demand only". */
 function applyMode() {
-  const form = $("draft-form");
   const scheduled = reportMode() === "scheduled";
   $("report-fields").dataset.mode = scheduled ? "scheduled" : "on-demand";
   $("period-row").hidden = scheduled;
   $("schedule-fields").hidden = !scheduled;
   for (const input of $("period-row").querySelectorAll("input")) input.disabled = scheduled;
-  const types = [...form.querySelectorAll('input[name="report_type"]')];
-  for (const input of types) {
-    input.disabled = scheduled && !reportTypes.find((item) => item.id === input.value)?.schedule;
+  const select = $("draft-report-type");
+  for (const option of select.options) {
+    const onDemandOnly = scheduled && !reportTypes.find((item) => item.id === option.value)?.schedule;
+    option.disabled = onDemandOnly;
+    option.text = onDemandOnly ? `${option.dataset.label} (on demand only)` : option.dataset.label;
   }
-  if (!types.some((input) => input.checked && !input.disabled)) {
-    const first = types.find((input) => !input.disabled);
-    if (first) first.checked = true;
+  if (select.selectedOptions[0]?.disabled) {
+    const first = [...select.options].find((option) => !option.disabled);
+    if (first) select.value = first.value;
   }
-  syncFormats();
-  syncSchedule();
+  syncReportType();
 }
 
 function syncSchedule() {
@@ -1202,7 +1485,7 @@ function syncSchedule() {
 
 function syncFormats() {
   const form = $("draft-form");
-  const typeId = form.querySelector('input[name="report_type"]:checked')?.value;
+  const typeId = reportTypeValue();
   const allowed = reportTypes?.find((item) => item.id === typeId)?.formats || ["pdf", "csv", "xlsx"];
   const inputs = [...form.querySelectorAll('input[name="format"]')];
   for (const input of inputs) input.disabled = !allowed.includes(input.value);
@@ -1228,7 +1511,7 @@ function readReportPayload() {
   const form = $("draft-form");
   return {
     site_id: form.elements.site_id.value,
-    report_type: form.querySelector('input[name="report_type"]:checked')?.value || "",
+    report_type: reportTypeValue(),
     format: form.querySelector('input[name="format"]:checked')?.value || "",
     start: form.elements.start.value,
     end: form.elements.end.value,
@@ -1239,7 +1522,7 @@ function readSchedulePayload() {
   const form = $("draft-form");
   const payload = {
     site_id: form.elements.site_id.value,
-    report_type: form.querySelector('input[name="report_type"]:checked')?.value || "",
+    report_type: reportTypeValue(),
     format: form.querySelector('input[name="format"]:checked')?.value || "",
     frequency: form.querySelector('input[name="frequency"]:checked:not(:disabled)')?.value || "",
     recipients: parseRecipients(form.elements.recipients.value).recipients,
@@ -1328,7 +1611,7 @@ function updateReportBuilder({ animate = false } = {}) {
     else input.removeAttribute("aria-invalid");
   }
   const parts = [reportTypeLabel(payload.report_type), siteName(payload.site_id)];
-  parts.push(...(problem ? ["Check the period"] : [formatPeriod(payload.start, payload.end), payload.format.toUpperCase()]));
+  parts.push(...(problem ? ["Check the period"] : [formatPeriod(payload.start, payload.end), formatLabel(payload.format)]));
   setSummary(parts.filter(Boolean).join(" · "), animate);
   $("prepare-draft").disabled = Boolean(problem) || !payload.report_type || !payload.format;
 }
@@ -1339,13 +1622,19 @@ function closeDraft() {
   if (!$("message").disabled) $("message").focus();
 }
 
+/* Returns whether the builder opened. */
 async function openDraft(requested, prefill = null, { fromFlow = false, fresh = false, focus = "" } = {}) {
-  if (!user) throw new Error("Start a synthetic demo session first.");
+  if (!user) throw new Error(syntheticData ? "Start a synthetic demo session first." : "Start a session first.");
   if (busy) throw new Error("Wait for the current answer to finish.");
   clearError();
   const scheduled = requested === "scheduled_report" || prefill?.mode === "scheduled";
   const kind = requested === "ticket" ? "ticket" : "report";
-  if (kind === "report" && !reportTypes) reportTypes = await (await api("/api/report-types")).json();
+  if (kind === "report" && !reportTypes) {
+    const session = token;
+    await loadReportTypes();
+    /* A session started while the catalog loaded begins with a clean conversation, so the builder stays closed. */
+    if (token !== session) return false;
+  }
   draftKind = kind;
   replacingCard = null;
   const panel = $("draft-panel");
@@ -1357,7 +1646,7 @@ async function openDraft(requested, prefill = null, { fromFlow = false, fresh = 
   const ticketFields = $("ticket-fields");
   reportFields.hidden = kind !== "report";
   ticketFields.hidden = kind !== "ticket";
-  for (const input of reportFields.querySelectorAll("input")) input.disabled = kind !== "report";
+  for (const input of reportFields.querySelectorAll("input, select")) input.disabled = kind !== "report";
   for (const input of ticketFields.querySelectorAll("input, textarea")) {
     input.disabled = kind !== "ticket";
     input.required = kind === "ticket" && input.name !== "alarm_id";
@@ -1365,7 +1654,7 @@ async function openDraft(requested, prefill = null, { fromFlow = false, fresh = 
   const multipleSites = user.sites.length > 1;
   if (kind === "report") {
     form.elements.mode.value = scheduled ? "scheduled" : "on-demand";
-    renderReportChoices(prefill?.report_type);
+    renderReportTypes(prefill?.report_type);
     applyMode();
     for (const input of form.querySelectorAll('input[name="format"]')) {
       if (input.value === prefill?.format && !input.disabled) input.checked = true;
@@ -1402,7 +1691,8 @@ async function openDraft(requested, prefill = null, { fromFlow = false, fresh = 
     $("draft-description").textContent = fromFlow
       ? "Filled in from your guided check. Review it before preparing."
       : "Describe the issue and what you’ve already tried.";
-    form.elements.alarm_id.value = prefill ? prefill.alarm_id || "" : `alarm-${form.elements.site_id.value}`;
+    form.elements.alarm_id.value = prefill ? prefill.alarm_id || ""
+      : syntheticData ? `alarm-${form.elements.site_id.value}` : "";
     form.elements.summary.value = prefill?.summary || "";
     form.elements.steps_tried.value = prefill?.steps_tried || "";
     $("draft-summary-icon").textContent = "↗";
@@ -1412,9 +1702,10 @@ async function openDraft(requested, prefill = null, { fromFlow = false, fresh = 
   panel.hidden = false;
   const focusTarget = focus === "recipients" ? form.elements.recipients
     : multipleSites ? form.elements.site_id
-      : kind === "report" ? form.querySelector('input[name="report_type"]:checked') : form.elements.summary;
+      : kind === "report" ? form.elements.report_type : form.elements.summary;
   focusTarget?.focus();
   scrollToLatest();
+  return true;
 }
 
 $("open-scenarios").addEventListener("click", () => openScenarios());
@@ -1490,16 +1781,13 @@ $("draft-form").addEventListener("change", (event) => {
   const { name, value } = event.target;
   const form = $("draft-form");
   if (name === "site_id" && draftKind === "ticket") {
-    if (form.elements.alarm_id.value) form.elements.alarm_id.value = `alarm-${value}`;
+    if (syntheticData && form.elements.alarm_id.value) form.elements.alarm_id.value = `alarm-${value}`;
     setSummary(`Support request for ${siteName(value)}`, true);
   }
   if (draftKind !== "report") return;
   if (name === "mode") applyMode();
   if (name === "period") applyPeriod(value, { focusCustom: value === "custom" });
-  if (name === "report_type") {
-    syncFormats();
-    syncSchedule();
-  }
+  if (name === "report_type") syncReportType();
   if (name === "start_date") syncSchedule();
   updateReportBuilder({ animate: true });
 });
@@ -1576,6 +1864,7 @@ async function loadScenarios() {
     if (!response.ok) throw new Error("unavailable");
     scenarios = await response.json();
     scenariosState = "ready";
+    updatePresenterTools();
   } catch {
     scenariosState = "error";
     throw new Error("Demo scenarios couldn’t be loaded. Check that the demo service is running, then try again.");
@@ -1710,11 +1999,19 @@ function applyDraftChanges(changes) {
   const form = $("draft-form");
   if ($("draft-panel").hidden || draftKind !== "report") throw new Error("Open the report builder first.");
   for (const [name, value] of Object.entries(changes)) {
-    const input = [...form.querySelectorAll(`input[name="${name}"]`)].find((item) => item.value === value && !item.disabled);
-    if (!input) throw new Error("The report builder doesn’t offer that choice.");
-    input.checked = true;
+    const control = form.elements.namedItem(name);
+    if (control instanceof HTMLSelectElement) {
+      if (![...control.options].some((option) => option.value === value && !option.disabled)) {
+        throw new Error("The report builder doesn’t offer that choice.");
+      }
+      control.value = value;
+    } else {
+      const input = [...form.querySelectorAll(`input[name="${name}"]`)].find((item) => item.value === value && !item.disabled);
+      if (!input) throw new Error("The report builder doesn’t offer that choice.");
+      input.checked = true;
+    }
     if (name === "period") applyPeriod(value);
-    if (name === "report_type") syncFormats();
+    if (name === "report_type") syncReportType();
   }
   updateReportBuilder({ animate: true });
 }
@@ -1811,7 +2108,7 @@ fetch("/api/health")
     $("access-code-field").hidden = !cloudMode;
     $("model-state").textContent = health.mode === "foundry" ? "AI assistant ready" : "Demo assistant ready";
     if (!cloudMode) $("code-help").textContent = "Local demo session · no access code needed.";
-    updateSessionUI();
+    applyDataSource(health.data_source);
   })
   .catch(() => {
     $("model-state").textContent = "Service unavailable";

@@ -1,4 +1,5 @@
 import json
+import logging
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -14,6 +15,10 @@ from .config import FEATURES
 from .domains import reporting, sites
 from .domains.base import Arguments, Handler, InvalidRequest, safe_link
 from .store import MissingRecord, Store
+from .timing import Timings
+from .usage import Usage
+
+log = logging.getLogger(__name__)
 
 __all__ = ["HANDLERS", "Context", "InvalidRequest", "safe_link", "tool_definitions"]
 
@@ -227,6 +232,8 @@ class Context:
     actions: list[dict] = field(default_factory=list)
     calls: list[dict] = field(default_factory=list)
     verified_sites: set[str] = field(default_factory=set)
+    timings: Timings = field(default_factory=Timings)
+    usage: Usage = field(default_factory=Usage)
 
     def permitted_site_ids(self) -> set[str]:
         return {site.id for site in self.user.sites if site.tenant_id == self.user.tenant_id}
@@ -248,9 +255,24 @@ class Context:
         """Re-check permissions, then call the configured service. Only the confirmation endpoint calls this."""
         self.validate_action(action["kind"], action["payload"])
         if action["kind"] in reporting.KINDS:
-            return reporting.submit(self, action)
-        ticket = SupportRequest.model_validate(action["payload"])
-        return self.services.support.submit_request(self.user, ticket, action["id"]).model_dump(mode="json")
+            result = reporting.submit(self, action)
+        else:
+            ticket = SupportRequest.model_validate(action["payload"])
+            result = self.services.support.submit_request(self.user, ticket, action["id"]).model_dump(mode="json")
+        if result.get("url") and not safe_link(result["url"]):
+            # The submission stands, since the service accepted it, but its link is never passed on.
+            log.warning(
+                "Request %s: withheld a %s link outside the approved path",
+                self.correlation_id,
+                action["kind"],
+                extra={
+                    "correlation_id": self.correlation_id,
+                    "event": "unapproved_link",
+                    "action_kind": action["kind"],
+                },
+            )
+            result["url"] = ""
+        return result
 
     @staticmethod
     def may_call(tool: Tool, caller: Caller, allowed: Iterable[str] | None) -> bool:
@@ -266,6 +288,14 @@ class Context:
     def execute(
         self, name: str, args: Any, *, caller: Caller = "scripted", allowed: Iterable[str] | None = None
     ) -> dict:
+        """Run one tool call, timed as a whole: argument checks, permissions and the service it calls."""
+        label = name if name in HANDLERS else "unknown"
+        with self.timings.stage("tool", "tools", f"tool.{label}", tool=label) as current:
+            output = self._execute(name, args, caller, allowed)
+            current.attributes["result"] = output.get("category", "ok")
+        return output
+
+    def _execute(self, name: str, args: Any, caller: Caller, allowed: Iterable[str] | None) -> dict:
         tool = load_agent().tools().get(name)
         if tool is None or not self.may_call(tool, caller, allowed):
             return self.failed(name, "unknown_tool", "Unknown tool.")

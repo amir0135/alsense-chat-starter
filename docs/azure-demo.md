@@ -10,8 +10,10 @@ to be the global CLI default. It does not deploy real Alsense connections or any
 - Login: `az login`. For a particular directory use `az login --tenant YOUR_TENANT_ID`.
 - Resource deployment and scoped RBAC permissions: Owner, or Contributor plus Role Based Access Control
   Administrator/User Access Administrator at the deployment scope.
-- Available GPT-5-mini DataZoneStandard quota in the model region. Defaults are Sweden Central for the model
-  and North Europe for the app; choose supported alternatives with flags.
+- Data Zone Standard quota for **gpt-6.1-terra** (version 2026-10-26) in the model region, at least the capacity
+  you deploy: 250K tokens per minute by default. Some subscription types must request quota for this model family
+  before they can deploy it. Defaults are Sweden Central for the model and North Europe for the app; choose
+  supported alternatives with flags.
 
 ## Preview and deploy
 
@@ -54,17 +56,46 @@ networking: ARM provisions its secret from a secure parameter. After correcting 
 | Consumption Container Apps environment/app | HTTPS widget and backend, one replica |
 | User-assigned managed identity | ACR pull, Foundry/model access and Key Vault secret retrieval |
 | Foundry AI Services account/project | Backend model client |
-| GPT-5-mini model deployment | DataZoneStandard, pinned version 2025-08-07, configurable capacity |
+| GPT-6.1 Terra model deployment | DataZoneStandard, pinned version 2026-10-26, 250K tokens per minute by default (`--model-capacity`) |
 | Key Vault | Demo access code, RBAC and purge protection |
 | Log Analytics + Application Insights | App/container logs and Python request telemetry |
 
 The Foundry deployment uses its Azure default content-filter configuration; an explicit Content Safety
 integration and APIM policies are not implemented. No Search, Cosmos DB or APIM is created merely as a placeholder.
 
-Costs include the registry, container replica, model usage, monitoring and Key Vault operations. The logging
+Costs include the registry, container replica, model usage (input and output tokens, reasoning included),
+monitoring and Key Vault operations. `dev.py usage` estimates the model cost per user once you set the model prices
+([HANDOVER](HANDOVER.md#estimating-model-cost)). The logging
 workspace has a daily ingestion cap, but it is **not a subscription spending cap**. Idle resources still cost
 money. Inspect Cost Management and remove your demo when finished. Key Vault purge protection retains a deleted
 vault for its retention interval; you cannot immediately reuse its name after deletion.
+
+## Model and capacity
+
+The assistant uses **gpt-6.1-terra** at reasoning effort `high`, with up to 8,000 output tokens per model call.
+`MODEL_REASONING_EFFORT` and `MODEL_MAX_OUTPUT_TOKENS` change them; the hosted app uses these defaults until you
+add the variables to the container app. Choose another model with `--model` and `--model-version`: it must be a
+reasoning model with the Responses API and function calling.
+
+Size the deployment's capacity in tokens per minute (TPM). Azure reserves each call's prompt plus its maximum
+output tokens when the call starts, so:
+
+> TPM ≥ questions per minute × model calls per question × (prompt tokens + `MODEL_MAX_OUTPUT_TOKENS`)
+
+Assuming about three model calls per question with prompts of about 5,000 tokens, a question reserves about
+3 × (5,000 + 8,000) ≈ 40,000 tokens, so the default capacity of 250 (250K TPM) allows about six questions a minute.
+Capacity costs nothing by itself on pay-as-you-go, where you pay per token, but it needs that much quota. Check the
+real numbers with `dev.py usage` and the deployment's metrics, then adjust `--model-capacity`. Redeploying an
+existing stack with another model adds that deployment and points the app at it; the previous one stays until you
+delete it.
+
+**Why this model (October 2026).** gpt-6.1-terra was chosen for strong reasoning at a moderate price. In
+independent tests it scores about 94% of the next larger model, GPT-6.1 Sol (51.0 against 54.5 on the Artificial
+Analysis intelligence index, read 28 October 2026), at half the per-token price, and it gives the fewest wrong
+answers in its family. Effort `high` rather than `max`, because maximum effort is much slower and not reliably
+better. The model was released on 26 October 2026 and independent results are still few: run your own evaluation
+cases (`dev.py evals --mode model`) and `dev.py measure` before relying on it. If it falls short, GPT-6.1 Sol is
+the next step up, at twice the price per token.
 
 ## Demo walkthrough
 
