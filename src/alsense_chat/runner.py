@@ -429,14 +429,17 @@ class FoundryRunner:
         self.project.close()
         self.credential.close()
 
-    def create(self, ctx: Context, **request: Any) -> tuple[Any, list]:
+    def create(self, ctx: Context, *, round_number: int = 1, **request: Any) -> tuple[Any, list]:
         """One model round: the response and its function calls.
 
         Each attempt is a model stage. A successful one counts as model_tool_selection or model_answer, a failed one
         as model_failed. The wait before a retry counts as model_throttled after a 429 and as model_retry otherwise.
         """
         for retries in range(MAX_RETRIES + 1):
-            with ctx.timings.stage("model", "model_failed") as attempt:
+            nested = ("model_followup",) if round_number > 1 else ()
+            with ctx.timings.stage("model", "model_failed", *nested) as attempt:
+                attempt.metrics["gen_ai.request.round"] = round_number
+                attempt.metrics["gen_ai.request.tool_count"] = len(request.get("tools", []))
                 ctx.usage.call()
                 try:
                     response = self.client.responses.create(**request)
@@ -444,6 +447,8 @@ class FoundryRunner:
                     error = exc
                     attempt.attributes["result"], attempt.failed = failure(exc), type(exc).__name__
                 else:
+                    # The Responses request is non-streaming: this is a full response, NOT first-token latency.
+                    ctx.timings.mark("first_model_response")
                     # Counted before the status check: an incomplete round can still have used tokens.
                     reported = ctx.usage.add(getattr(response, "usage", None))
                     attempt.metrics |= {
@@ -477,7 +482,7 @@ class FoundryRunner:
                         raise RuntimeError("Model response incomplete or blocked; no answer released.")
                     calls = [item for item in response.output if item.type == "function_call"]
                     kind = "tool_selection" if calls else "answer"
-                    attempt.keys, attempt.attributes["round_kind"] = (f"model_{kind}",), kind
+                    attempt.keys, attempt.attributes["round_kind"] = (f"model_{kind}", *nested), kind
                     return response, calls
             wait = retry_wait(error, retries) if retries < MAX_RETRIES else None
             if wait is None:
@@ -531,10 +536,11 @@ class FoundryRunner:
             )
         items.append({"role": "user", "content": message})
         repaired = False
-        for _ in range(12):
+        for round_number in range(1, 13):
             # A round whose output calls tools is the model selecting tools; a round without calls answers.
             response, calls = self.create(
                 ctx,
+                round_number=round_number,
                 model=self.deployment,
                 instructions=instructions,
                 input=cast(Any, items),
@@ -545,6 +551,7 @@ class FoundryRunner:
                 # carry the model's reasoning themselves, encrypted, and it continues from them.
                 include=["reasoning.encrypted_content"],
                 max_output_tokens=self.max_output_tokens,
+                extra_headers={"X-Client-Request-Id": ctx.correlation_id},
             )
             if calls:
                 items.extend(item.model_dump(exclude_none=True) for item in response.output)

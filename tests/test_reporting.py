@@ -5,11 +5,15 @@ from dataclasses import replace
 from datetime import date, datetime, timedelta
 
 import pytest
-from helpers import app_client, events, login, submit
+from fastapi.testclient import TestClient
+from helpers import app_client, events, login, reply, submit
 
 from alsense_chat.adapters import synthetic
 from alsense_chat.adapters.contracts import ReportType, ScheduleSupport
+from alsense_chat.adapters.errors import ServiceUnavailable
 from alsense_chat.adapters.synthetic.services import SyntheticReports
+from alsense_chat.app import create_app
+from alsense_chat.config import Settings
 from alsense_chat.runner import guard
 from alsense_chat.store import Store
 from alsense_chat.tools import Context
@@ -45,6 +49,87 @@ def test_a_valid_schedule_becomes_a_draft_and_nothing_else(tmp_path):
     assert action["payload"]["recipients"] == ["Ops@example.com"]
     assert output["data"]["id"] == action["id"]
     assert ctx.calls[-1]["inputs"]["recipients"] == 1, "the audit counts recipients and never stores addresses"
+
+
+def test_catalog_is_reused_within_a_request_but_confirmation_and_other_users_read_fresh(tmp_path):
+    class Reports(SyntheticReports):
+        lookups: list[str] = []
+        submissions = 0
+        available = True
+
+        def report_types(self, user):
+            self.lookups.append(user.id)
+            return super().report_types(user) if self.available else []
+
+        def submit_report(self, *args):
+            self.submissions += 1
+            return super().submit_report(*args)
+
+    reports = Reports()
+    services = replace(synthetic.build(), reports=reports)
+    with TestClient(create_app(Settings(db=str(tmp_path / "cache.sqlite3")), services)) as client:
+        alice = login(client)
+        action = reply(client, alice, "Create a temperature report for Demo North for the last seven days")["actions"][
+            0
+        ]
+        assert reports.lookups == ["alice"] and reports.submissions == 0
+        reports.available = False
+        assert submit(client, alice, action["id"]).status_code == 403
+        assert reports.lookups == ["alice", "alice"] and reports.submissions == 0
+        reports.available = True
+        assert submit(client, alice, action["id"]).status_code == 200
+        # The transactional validation must fetch again, after any wait for the submission lock.
+        assert reports.lookups == ["alice"] * 4 and reports.submissions == 1
+        assert submit(client, alice, action["id"]).status_code == 200
+        assert reports.lookups == ["alice"] * 5 and reports.submissions == 1
+        reports.available = False
+        assert client.get("/api/report-types", headers=login(client, "bob")).json() == []
+        assert reports.lookups[-1] == "bob"
+
+
+def test_confirmation_refreshes_catalog_after_acquiring_the_submission_transaction(tmp_path):
+    class Reports(SyntheticReports):
+        lookups = 0
+        submissions = 0
+
+        def report_types(self, user):
+            self.lookups += 1
+            # Available to prepare and to the outer confirmation check, removed at the transactional check.
+            return super().report_types(user) if self.lookups < 3 else []
+
+        def submit_report(self, *args):
+            self.submissions += 1
+            return super().submit_report(*args)
+
+    reports = Reports()
+    services = replace(synthetic.build(), reports=reports)
+    with TestClient(create_app(Settings(db=str(tmp_path / "fresh.sqlite3")), services)) as client:
+        headers = login(client)
+        action = reply(client, headers, "Create a temperature report for Demo North for the last seven days")[
+            "actions"
+        ][0]
+        assert submit(client, headers, action["id"]).status_code == 403
+        assert reports.lookups == 3 and reports.submissions == 0
+        assert client.get(f"/api/actions/{action['id']}/status", headers=headers).json()["state"] == "prepared"
+
+
+def test_catalog_failures_are_explicit_and_never_cached(tmp_path):
+    class Reports(SyntheticReports):
+        lookups = 0
+
+        def report_types(self, user):
+            self.lookups += 1
+            if self.lookups == 1:
+                raise ServiceUnavailable("reports")
+            return super().report_types(user)
+
+    reports = Reports()
+    ctx = context(tmp_path, replace(synthetic.build(), reports=reports))
+    failed = ctx.execute("list_report_types", {})
+    assert failed["category"] == "unavailable" and ctx.report_catalog is None
+    assert "error" not in ctx.execute("list_report_types", {}) and reports.lookups == 2
+    invalid = ctx.execute("prepare_scheduled_report", schedule(report_type="site-status"))
+    assert invalid["category"] == "invalid_input" and ctx.actions == [] and reports.lookups == 2
 
 
 @pytest.mark.parametrize(

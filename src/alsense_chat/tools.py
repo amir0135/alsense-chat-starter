@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from pydantic import Field, ValidationError
 
-from .adapters.contracts import SupportRequest, User
+from .adapters.contracts import ReportType, SupportRequest, User
 from .adapters.errors import Forbidden, IntegrationError, ServiceUnavailable, StaleData
 from .adapters.interfaces import Services
 from .agent import Agent, Tool, load_agent
@@ -95,7 +95,7 @@ def invalid_message(exc: ValidationError) -> str:
 
 
 def search_docs(ctx: "Context", args: dict) -> list[dict]:
-    docs = ctx.services.knowledge.search(ctx.user, args["query"])
+    docs = ctx.timings.api("knowledge.search", ctx.services.knowledge.search, ctx.user, args["query"])
     if any(not safe_link(doc.url) for doc in docs):
         raise ServiceUnavailable("knowledge", "The guidance search returned an unapproved link, so I withheld it.")
     return [doc.model_dump() for doc in docs]
@@ -103,7 +103,10 @@ def search_docs(ctx: "Context", args: dict) -> list[dict]:
 
 def validate_ticket(ctx: "Context", payload: dict) -> None:
     ticket = Ticket.model_validate(payload)
-    alarms = {alarm.id for alarm in ctx.services.sites.active_alarms(ctx.user, ticket.site_id)}
+    alarms = {
+        alarm.id
+        for alarm in ctx.timings.api("sites.active_alarms", ctx.services.sites.active_alarms, ctx.user, ticket.site_id)
+    }
     if ticket.alarm_id and ticket.alarm_id not in alarms:
         raise InvalidRequest("That alarm isn't active at this site.")
 
@@ -119,7 +122,7 @@ def prepare_support_ticket(ctx: "Context", args: dict) -> dict:
 
 def check_site_health(ctx: "Context", args: dict) -> dict:
     ctx.check_site(args["site_id"])
-    report = ctx.services.health.site_health(ctx.user, args["site_id"])
+    report = ctx.timings.api("health.site_health", ctx.services.health.site_health, ctx.user, args["site_id"])
     if report.site_id != args["site_id"]:
         raise ServiceUnavailable("health", "The health-check service answered for a different site.")
     observed = report.observed_at if report.observed_at.tzinfo else report.observed_at.replace(tzinfo=UTC)
@@ -232,6 +235,7 @@ class Context:
     actions: list[dict] = field(default_factory=list)
     calls: list[dict] = field(default_factory=list)
     verified_sites: set[str] = field(default_factory=set)
+    report_catalog: dict[str, ReportType] | None = None
     timings: Timings = field(default_factory=Timings)
     usage: Usage = field(default_factory=Usage)
 
@@ -253,12 +257,16 @@ class Context:
 
     def submit_action(self, action: dict) -> dict:
         """Re-check permissions, then call the configured service. Only the confirmation endpoint calls this."""
+        # Acquiring the submission transaction may have waited: its validation must read fresh metadata.
+        self.report_catalog = None
         self.validate_action(action["kind"], action["payload"])
         if action["kind"] in reporting.KINDS:
             result = reporting.submit(self, action)
         else:
             ticket = SupportRequest.model_validate(action["payload"])
-            result = self.services.support.submit_request(self.user, ticket, action["id"]).model_dump(mode="json")
+            result = self.timings.api(
+                "support.submit_request", self.services.support.submit_request, self.user, ticket, action["id"]
+            ).model_dump(mode="json")
         if result.get("url") and not safe_link(result["url"]):
             # The submission stands, since the service accepted it, but its link is never passed on.
             log.warning(

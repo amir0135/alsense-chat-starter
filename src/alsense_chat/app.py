@@ -104,13 +104,32 @@ class CorrelationMiddleware:
         correlation_id = incoming if CORRELATION_ID.fullmatch(incoming) else uuid.uuid4().hex[:16]
         state = scope.setdefault("state", {})
         state["correlation_id"], state["started"] = correlation_id, started
+        status = 500
 
         async def send_with_id(message):
+            nonlocal status
             if message["type"] == "http.response.start":
+                status = message["status"]
                 message["headers"] = [*message.get("headers", []), (b"x-correlation-id", correlation_id.encode())]
             await send(message)
 
-        await self.app(scope, receive, send_with_id)
+        try:
+            await self.app(scope, receive, send_with_id)
+        finally:
+            # Unlike the audit's total, this includes stream delivery and the final audit write.
+            log.info(
+                "http %s %s %s %.2f ms",
+                correlation_id,
+                scope["method"],
+                status,
+                (time.perf_counter() - started) * 1000,
+                extra={
+                    "event": "http_timing",
+                    "correlation_id": correlation_id,
+                    "http_status": status,
+                    "http_total_ms": round((time.perf_counter() - started) * 1000, 2),
+                },
+            )
 
 
 def configure_logging(level: str) -> None:
@@ -289,6 +308,10 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         token, session_id = app.state.store.create_session(user, settings.ttl_seconds, faults, scenario)
         return {"token": token, "session_id": session_id, "user": user.model_dump(), "scenario": scenario}
 
+    def lookup_user(request: Request, persona: str) -> User:
+        timings = Timings(request.state.correlation_id, request.state.started)
+        return timings.api("identity.users_me", services.identity.users_me, persona)
+
     def check_access_code(supplied: str) -> None:
         if settings.cloud_demo and not hmac.compare_digest(supplied.encode(), settings.demo_access_code.encode()):
             raise HTTPException(401, "Demo access code invalid.")
@@ -353,7 +376,7 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         reason = unavailable_reason(scenario, flows, settings.features, services.kind, persona_ids)
         if reason:
             raise HTTPException(409, reason)
-        session = start_session(services.identity.users_me(scenario.persona), frozenset(scenario.faults), scenario.id)
+        session = start_session(lookup_user(request, scenario.persona), frozenset(scenario.faults), scenario.id)
         app.state.store.audit(
             correlation_id=request.state.correlation_id,
             session_id=session["session_id"],
@@ -370,7 +393,7 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         if not settings.demo_login or not settings.enabled:
             raise HTTPException(403, "Demo login unavailable.")
         check_access_code(body.access_code)
-        session = start_session(services.identity.users_me(body.persona))
+        session = start_session(lookup_user(request, body.persona))
         app.state.store.audit(
             correlation_id=request.state.correlation_id,
             session_id=session["session_id"],
@@ -393,7 +416,8 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
     def report_types(ctx: Annotated[Context, Depends(context)]):
         if "reports" not in ctx.features:
             raise HTTPException(403, FEATURE_OFF["reports"])
-        return [report_type.model_dump() for report_type in ctx.services.reports.report_types(ctx.user)]
+        items = ctx.timings.api("reports.report_types", ctx.services.reports.report_types, ctx.user)
+        return [report_type.model_dump() for report_type in items]
 
     @app.post("/api/chat")
     def chat(body: Chat, request: Request, ctx: Annotated[Context, Depends(context)]):
@@ -428,8 +452,18 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
                     reply = error_reply(exc, ctx)
                     persist(reply)
                     yield frame("reply", reply)
-            except Exception:
-                log.exception("Chat %s failed; no unverified answer released", ctx.correlation_id)
+            except Exception as exc:
+                # Provider/adapter exceptions can contain request text or credentials; never export their text.
+                log.error(
+                    "Chat %s failed (%s); no unverified answer released",
+                    ctx.correlation_id,
+                    type(exc).__name__,
+                    extra={
+                        "correlation_id": ctx.correlation_id,
+                        "event": "runtime_error",
+                        "error_type": type(exc).__name__,
+                    },
+                )
                 ctx.store.record_unanswered(ctx.session_id, "runtime_error")
                 ctx.timings.mark("first_event")
                 yield 'event: error\ndata: {"message":"The run failed. Check the backend log and retry."}\n\n'

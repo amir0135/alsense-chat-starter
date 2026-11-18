@@ -100,7 +100,7 @@ def resolve(name: str | None, sites: list[Site]) -> Resolution:
 
 
 def site_view(ctx: "Context", site: Site) -> dict:
-    alarms = ctx.services.sites.active_alarms(ctx.user, site.id)
+    alarms = ctx.timings.api("sites.active_alarms", ctx.services.sites.active_alarms, ctx.user, site.id)
     return {"id": site.id, "name": site.name, "alarms": [alarm.model_dump() for alarm in alarms]}
 
 
@@ -116,7 +116,11 @@ class PermittedSitesQuery(Arguments):
 def get_permitted_sites(ctx: "Context", args: dict) -> dict:
     allowed = ctx.permitted_site_ids()
     # Defense in depth: never return a site outside the session's own permissions, whatever the service says.
-    sites = [site for site in ctx.services.sites.permitted_sites(ctx.user) if site.id in allowed]
+    sites = [
+        site
+        for site in ctx.timings.api("sites.permitted_sites", ctx.services.sites.permitted_sites, ctx.user)
+        if site.id in allowed
+    ]
     resolution = resolve(args.get("name"), sites)
     single = resolution.match == "one" and resolution.exact
     if single or (resolution.match == "all" and len(resolution.sites) == 1):

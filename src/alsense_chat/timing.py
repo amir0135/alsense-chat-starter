@@ -3,8 +3,9 @@
 Each stage is measured with a monotonic clock and summed per request, with how often it ran (a model round or
 tool call can repeat). The sums go to the request's audit record, numbers only. With Application Insights
 configured, every stage is also an OpenTelemetry span (`alsense.<stage>`) whose attributes are limited to the
-correlation id, stage, tool name, result category and model round kind: never message text, tool arguments or
-results, tokens or credentials. An exception marks its span as failed with the exception's type name only.
+correlation id, stage, operation, tool name, result category and model round kind, plus numeric model usage and
+round counters: never message text, tool arguments or results, authentication tokens or credentials.
+An exception marks its span as failed with the exception's type name only.
 
 Summarize what the local demo recorded, per event, assistant and routed domains:
 
@@ -14,16 +15,17 @@ Summarize what the local demo recorded, per event, assistant and routed domains:
 import argparse
 import functools
 import json
+import logging
 import math
 import os
 import sqlite3
 import sys
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import closing, contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, ParamSpec, TypeVar
 
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
@@ -32,6 +34,21 @@ from .agent import load_agent
 from .domains import reporting
 
 TRACER = trace.get_tracer("alsense_chat")
+log = logging.getLogger(__name__)
+P = ParamSpec("P")
+T = TypeVar("T")
+API_OPERATIONS = (
+    "identity.users_me",
+    "sites.permitted_sites",
+    "sites.active_alarms",
+    "knowledge.search",
+    "health.site_health",
+    "reports.report_types",
+    "reports.submit_report",
+    "reports.schedule_report",
+    "reports.report_status",
+    "support.submit_request",
+)
 # Stages that run one after another within a request. Whatever they leave of the total is shown as "(other)":
 # request handling, the scripted planner's own parsing and assembling the reply.
 SEQUENTIAL = (
@@ -49,7 +66,7 @@ SEQUENTIAL = (
 )
 # Offsets from the moment the request arrived, not durations: the first streamed event (a progress step or
 # the reply), the reply and the end of the request.
-OFFSETS = ("first_event", "reply", "total")
+OFFSETS = ("first_model_response", "first_event", "reply", "total")
 # The widget's own offsets from sending the question, reported to POST /api/timings.
 CLIENT = ("headers", "first_event", "reply", "rendered")
 ORDER = (*SEQUENTIAL, "(other)", *OFFSETS)
@@ -61,7 +78,17 @@ ACTION_KINDS = (*reporting.KINDS, "ticket")
 def known_stages() -> frozenset[str]:
     """Every stage a timings record may name: fixed stages, one per declared tool and one per action kind."""
     tools = {*load_agent().tools(), "unknown", *(f"submit_{kind}" for kind in ACTION_KINDS)}
-    return frozenset({*SEQUENTIAL, *OFFSETS, *CLIENT, *(f"tool.{name}" for name in tools)})
+    return frozenset(
+        {
+            *SEQUENTIAL,
+            *OFFSETS,
+            *CLIENT,
+            "model_followup",
+            "api_calls",
+            *(f"api.{name}" for name in API_OPERATIONS),
+            *(f"tool.{name}" for name in tools),
+        }
+    )
 
 
 def valid_record(timings: Any) -> bool:
@@ -118,6 +145,7 @@ class Timings:
             try:
                 yield current
             except BaseException as exc:
+                current.failed = type(exc).__name__
                 span.set_status(StatusCode.ERROR, type(exc).__name__)
                 raise
             finally:
@@ -134,6 +162,28 @@ class Timings:
                         **{key: value for key, value in current.metrics.items() if type(value) is int},
                     }
                 )
+                log.info(
+                    "stage %s %s %.2f ms",
+                    self.correlation_id,
+                    name,
+                    elapsed,
+                    extra={
+                        "event": "latency_stage",
+                        "correlation_id": self.correlation_id,
+                        "stage": name,
+                        "duration_ms": round(elapsed, 2),
+                        "stage_keys": ",".join(current.keys),
+                        "error_type": current.failed or "",
+                        **current.attributes,
+                    },
+                )
+
+    def api(self, operation: str, call: Callable[P, T], /, *args: P.args, **kwargs: P.kwargs) -> T:
+        """One adapter call, including failures. Operation names are fixed, never input, URLs or arguments."""
+        if operation not in API_OPERATIONS:
+            raise ValueError("Unknown API timing operation.")
+        with self.stage("api", "api_calls", f"api.{operation}", operation=operation):
+            return call(*args, **kwargs)
 
     def mark(self, key: str) -> None:
         """Record the time since the request arrived, the first time only (first_event, total)."""
@@ -204,7 +254,8 @@ def _rank(key: str) -> tuple[int, int, str]:
 def report(records: list[dict], source: str) -> str:
     lines = [
         f"Milliseconds per stage from {len(records)} timed audit records in {source} (nearest-rank percentiles).",
-        "first_event, reply, total and client.* are offsets from the start; the other stages are durations.",
+        "first_model_response, first_event, reply, total and client.* are offsets from the start.",
+        "api.*, api_calls and model_followup are nested durations; do not add them to their parent stages.",
         "Local measurements describe this machine, data source and assistant mode only.",
         "",
     ]

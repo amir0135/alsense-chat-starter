@@ -285,7 +285,23 @@ function friendlyRequestError(status, path, detail) {
   return detail || "The request couldn’t be completed. Please try again.";
 }
 
-async function api(path, body) {
+function newCorrelationId() {
+  return globalThis.crypto?.randomUUID?.() || `web-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
+}
+
+function latencyMeasure(stage, start, correlationId, numbers = {}) {
+  try {
+    performance.measure(`alsense ${stage}`, {
+      start,
+      duration: performance.now() - start,
+      detail: { correlation_id: correlationId, ...numbers },
+    });
+  } catch {
+    /* Performance measure options aren't available in every browser. */
+  }
+}
+
+async function api(path, body, { correlationId = "" } = {}) {
   let response;
   try {
     response = await fetch(path, {
@@ -293,6 +309,7 @@ async function api(path, body) {
       headers: {
         "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(correlationId ? { "X-Correlation-ID": correlationId } : {}),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
@@ -476,8 +493,13 @@ function renderStatus(data, parent, synthetic) {
   renderReportResult(parent, data, { synthetic });
 }
 
-async function reportStatus(actionId) {
-  return (await api(`/api/actions/${encodeURIComponent(actionId)}/status`)).json();
+async function reportStatus(actionId, correlationId = "") {
+  const started = performance.now();
+  try {
+    return await (await api(`/api/actions/${encodeURIComponent(actionId)}/status`, undefined, { correlationId })).json();
+  } finally {
+    latencyMeasure("report_status", started, correlationId);
+  }
 }
 
 function pageVisible() {
@@ -496,27 +518,43 @@ function pageVisible() {
    while its card stays in the conversation of the same session and the page is visible: one loop per card. It stops
    on a result, an error (the caller shows it) or a new session, and after two minutes says so. Each state read is
    passed to onState. */
-async function followReport(actionId, container, synthetic = true, onState = () => {}) {
+async function followReport(actionId, container, synthetic = true, onState = () => {}, correlationId = "") {
   if (followedReports.has(container)) return null;
   followedReports.add(container);
   const session = token;
   const started = performance.now();
+  const traceId = correlationId || newCorrelationId();
+  let polls = 0;
+  let outcome = "error";
   const current = () => token === session && container.isConnected;
   try {
     for (let delay = STATUS_POLL.first; ; delay = Math.min(delay * STATUS_POLL.growth, STATUS_POLL.longest)) {
-      const status = await reportStatus(actionId);
-      if (!current()) return null;
+      polls += 1;
+      const status = await reportStatus(actionId, traceId);
+      if (!current()) {
+        outcome = "cancelled";
+        return null;
+      }
       const running = status.state === "processing";
       const again = running && performance.now() - started + delay <= STATUS_POLL.limit;
+      const renderStarted = performance.now();
       renderReportResult(container, status, { live: again, stopped: running && !again, synthetic });
       onState(status.state);
-      if (!again) return status;
+      latencyMeasure("report_render", renderStarted, traceId);
+      if (!again) {
+        outcome = running ? "limit" : status.state === "failed" ? "failed" : "finished";
+        return status;
+      }
       await new Promise((resolve) => setTimeout(resolve, delay));
       await pageVisible();
-      if (!current()) return null;
+      if (!current()) {
+        outcome = "cancelled";
+        return null;
+      }
     }
   } finally {
     followedReports.delete(container);
+    latencyMeasure("report_poll", started, traceId, { poll_count: polls, outcome });
   }
 }
 
@@ -691,7 +729,8 @@ function actionRows(kind, payload) {
   return [["Site", site], ["Alarm", payload.alarm_id], ["Summary", payload.summary], ["Steps tried", payload.steps_tried]];
 }
 
-function renderAction(action, parent, synthetic = true) {
+function renderAction(action, parent, synthetic = true, correlationId = "") {
+  const actionCorrelationId = correlationId || newCorrelationId();
   const kind = ACTION_COPY[action.kind] ? action.kind : "ticket";
   const copy = actionCopy(kind, synthetic);
   const reporting = kind !== "ticket";
@@ -788,6 +827,7 @@ function renderAction(action, parent, synthetic = true) {
   /* Returns whether the submission succeeded; failures stay visible on the card. */
   const confirmAction = async () => {
     if (card.dataset.state !== "prepared" && card.dataset.state !== "failed") return false;
+    const started = performance.now();
     setState("submitting");
     confirm.disabled = true;
     confirm.classList.add("is-busy");
@@ -796,7 +836,8 @@ function renderAction(action, parent, synthetic = true) {
     state.hidden = true;
     state.classList.remove("failed");
     try {
-      const submission = await (await api(`/api/actions/${encodeURIComponent(action.id)}/submit`, { confirmed: true })).json();
+      const submission = await (await api(`/api/actions/${encodeURIComponent(action.id)}/submit`,
+        { confirmed: true }, { correlationId: actionCorrelationId })).json();
       setState("submitted");
       state.hidden = true;
       buttons.replaceChildren();
@@ -819,7 +860,7 @@ function renderAction(action, parent, synthetic = true) {
           renderReportResult(result, { state: "scheduled", result: submission }, { synthetic });
         } else {
           /* The link is the point of the report: fetch it right away instead of waiting for "Check status". */
-          followReport(action.id, result, synthetic, showJob).catch((error) => {
+          followReport(action.id, result, synthetic, showJob, actionCorrelationId).catch((error) => {
             result.replaceChildren(node("p", "download-note is-failed",
               `${error.message} Use Check status to try again.`));
           });
@@ -836,6 +877,8 @@ function renderAction(action, parent, synthetic = true) {
       confirm.textContent = copy.retry;
       edit.disabled = false;
       return false;
+    } finally {
+      latencyMeasure("action_submit", started, actionCorrelationId);
     }
   };
   const editAction = async () => {
@@ -995,7 +1038,7 @@ function renderWhy(reply, parent) {
   parent.append(details);
 }
 
-function renderReply(reply) {
+function renderReply(reply, correlationId = "") {
   lastReply = reply;
   const flow = reply.flow || null;
   const article = node("article", "turn assistant-turn");
@@ -1017,7 +1060,7 @@ function renderReply(reply) {
       if (source?.tool === "list_report_types") rememberReportTypes(source.data);
     }
     renderEvidence(reply, body);
-    for (const action of reply.actions || []) renderAction(action, body, synthetic);
+    for (const action of reply.actions || []) renderAction(action, body, synthetic, correlationId);
     renderChoices(reply, body);
     renderBuilderPrompt(reply, body);
     renderFollowUps(reply, body);
@@ -1153,26 +1196,26 @@ function renderFailure(container, message, retryText, retryDisplayText) {
 function chatTiming() {
   const start = performance.now();
   const ms = {};
-  let correlationId = "";
+  let correlationId = newCorrelationId();
   let shown = Promise.resolve();
   const mark = (name) => {
     if (name in ms) return;
     ms[name] = Math.round(performance.now() - start);
-    try {
-      performance.measure(`alsense chat ${name}`, { start, duration: ms[name] });
-    } catch {
-      /* Browsers without measure options still record the numbers. */
-    }
+    latencyMeasure(`chat ${name}`, start, correlationId);
   };
   return {
     mark,
+    get correlationId() { return correlationId; },
     received(response) {
       correlationId = response.headers.get("X-Correlation-ID") || "";
       mark("headers");
     },
     /* The reply is in the page: measure once the browser has had a frame to lay it out and paint it. */
-    rendered() {
-      shown = new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0))).then(() => mark("rendered"));
+    rendered(renderStarted) {
+      shown = new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0))).then(() => {
+        mark("rendered");
+        latencyMeasure("chat_render", renderStarted, correlationId);
+      });
     },
     report() {
       if (!correlationId) return;
@@ -1216,7 +1259,7 @@ async function send(message, displayText = message) {
 
   const timing = chatTiming();
   try {
-    const response = await api("/api/chat", { message: questionText });
+    const response = await api("/api/chat", { message: questionText }, { correlationId: timing.correlationId });
     timing.received(response);
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -1238,9 +1281,10 @@ async function send(message, displayText = message) {
         if (eventName === "step") setProgress(assistant, TOOL_PROGRESS[data.tool] || "Checking the available information…");
         if (eventName === "reply") {
           timing.mark("reply");
+          const renderStarted = performance.now();
           assistant.remove();
-          received = { reply: data, body: renderReply(data) };
-          timing.rendered();
+          received = { reply: data, body: renderReply(data, timing.correlationId) };
+          timing.rendered(renderStarted);
         }
         if (eventName === "error") failed = true;
       }

@@ -23,12 +23,14 @@ def test_every_model_call_uses_the_configured_reasoning_and_output_limit(
     requests: list[dict] = []
     settings = foundry(monkeypatch, [("get_permitted_sites", {}), ANSWER], requests)
     with app_client(tmp_path, **settings, **overrides) as client:
-        assert reply(client, login(client), SITES)["status"] == "answer"
+        headers = {**login(client), "X-Correlation-ID": "trace-provider-request"}
+        assert reply(client, headers, SITES)["status"] == "answer"
     assert len(requests) == 2
     for request in requests:
         assert request["reasoning"] == {"effort": effort}
         assert request["include"] == ["reasoning.encrypted_content"]
         assert (request["max_output_tokens"], request["store"]) == (limit, False)
+        assert request["extra_headers"] == {"X-Client-Request-Id": "trace-provider-request"}
 
 
 def test_the_model_gets_its_encrypted_reasoning_back_with_the_tool_results(tmp_path, monkeypatch):

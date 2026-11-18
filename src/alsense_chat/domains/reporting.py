@@ -87,7 +87,11 @@ class NoArguments(Arguments):
 
 
 def catalog(ctx: "Context") -> dict[str, ReportType]:
-    return {item.id: item for item in ctx.services.reports.report_types(ctx.user)}
+    # Reuse draft metadata within the request; confirmation refreshes again at execution. Failures aren't cached.
+    if ctx.report_catalog is None:
+        items = ctx.timings.api("reports.report_types", ctx.services.reports.report_types, ctx.user)
+        ctx.report_catalog = {item.id: item for item in items}
+    return ctx.report_catalog
 
 
 def validate(ctx: "Context", kind: str, payload: dict) -> None:
@@ -129,10 +133,14 @@ def submit(ctx: "Context", action: dict) -> dict:
     """Create the report or schedule after the user confirmed. Only the confirmation endpoint calls this."""
     if action["kind"] == "report":
         report = ReportRequest.model_validate(action["payload"])
-        submission = ctx.services.reports.submit_report(ctx.user, report, action["id"])
+        submission = ctx.timings.api(
+            "reports.submit_report", ctx.services.reports.submit_report, ctx.user, report, action["id"]
+        )
     else:
         schedule = ScheduledReportRequest.model_validate(action["payload"])
-        submission = ctx.services.reports.schedule_report(ctx.user, schedule, action["id"])
+        submission = ctx.timings.api(
+            "reports.schedule_report", ctx.services.reports.schedule_report, ctx.user, schedule, action["id"]
+        )
     return submission.model_dump(mode="json")
 
 
@@ -145,7 +153,7 @@ def report_status(ctx: "Context", args: dict) -> dict:
         return {"kind": action["kind"], "state": "prepared", "result": None}
     if action["kind"] == "scheduled_report":
         return {"kind": "scheduled_report", "state": "scheduled", "result": action["result"]}
-    job = ctx.services.reports.report_status(ctx.user, action["result"]["id"])
+    job = ctx.timings.api("reports.report_status", ctx.services.reports.report_status, ctx.user, action["result"]["id"])
     if job.url and not safe_link(job.url):
         raise ServiceUnavailable("reports", "The report service returned an unapproved link, so I withheld it.")
     return {"kind": "report", "state": job.state, "result": job.model_dump(mode="json")}

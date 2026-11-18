@@ -1,6 +1,7 @@
 """Request timings: numbers per stage in the audit record and in spans, never message text."""
 
 import json
+import logging
 import sqlite3
 
 import pytest
@@ -12,7 +13,14 @@ from alsense_chat.store import MIGRATIONS, SCHEMA_VERSION, Store
 
 SITES = "Which sites can I access?"
 REPORT = "Create a temperature report for Demo North for the last seven days"
-SPAN_ATTRIBUTES = {"alsense.correlation_id", "alsense.stage", "alsense.tool", "alsense.result", "alsense.round_kind"}
+SPAN_ATTRIBUTES = {
+    "alsense.correlation_id",
+    "alsense.stage",
+    "alsense.tool",
+    "alsense.result",
+    "alsense.round_kind",
+    "alsense.operation",
+}
 
 
 def trail(tmp_path, *kinds: str) -> list[dict]:
@@ -30,6 +38,9 @@ def test_a_scripted_chat_turn_records_each_stage(tmp_path):
         "session",
         "route",
         "tools",
+        "api_calls",
+        "api.sites.permitted_sites",
+        "api.sites.active_alarms",
         "tool.get_permitted_sites",
         "guard",
         "persist",
@@ -37,7 +48,8 @@ def test_a_scripted_chat_turn_records_each_stage(tmp_path):
         "reply",
         "total",
     }
-    assert all(value >= 0 for value in ms.values()) and set(count.values()) == {1}
+    assert all(value >= 0 for value in ms.values()) and count["api_calls"] == 2
+    assert {value for key, value in count.items() if key != "api_calls"} == {1}
     assert ms["tools"] == ms["tool.get_permitted_sites"]
     assert ms["first_event"] <= ms["reply"] <= ms["total"]
     assert sum(ms[key] for key in ("session", "route", "tools", "guard", "persist")) <= ms["total"] + 0.1
@@ -53,8 +65,23 @@ def test_reports_confirmations_and_status_reads_are_timed(tmp_path):
     chat, confirmed, status, flow = trail(tmp_path, "chat", "submit", "status", "flow")
     assert chat["timings"]["count"]["tools"] == 3
     assert {"tool.get_permitted_sites", "tool.list_report_types", "tool.prepare_report"} <= set(chat["timings"]["ms"])
-    assert set(confirmed["timings"]["ms"]) == {"session", "tools", "tool.submit_report", "total"}
-    assert set(status["timings"]["ms"]) == {"session", "tools", "tool.get_report_status", "total"}
+    assert set(confirmed["timings"]["ms"]) == {
+        "session",
+        "tools",
+        "tool.submit_report",
+        "total",
+        "api_calls",
+        "api.reports.report_types",
+        "api.reports.submit_report",
+    }
+    assert set(status["timings"]["ms"]) == {
+        "session",
+        "tools",
+        "tool.get_report_status",
+        "total",
+        "api_calls",
+        "api.reports.report_status",
+    }
     assert (confirmed["assistant"], status["assistant"], flow["assistant"]) == (None, None, "guided")
     assert {"route", "tool.check_site_health", "persist", "total"} <= set(flow["timings"]["ms"])
 
@@ -75,6 +102,8 @@ def test_model_rounds_that_select_tools_are_timed_apart_from_the_answer(tmp_path
     assert record["assistant"] == "model"
     # The first answer fails the number check, so a repair round answers again.
     assert (count["model_tool_selection"], count["model_answer"], count["guard"]) == (1, 2, 2)
+    assert count["model_followup"] == 2
+    assert ms["first_model_response"] <= ms["first_event"] <= ms["reply"]
     assert {"session", "history", "route", "tool.get_permitted_sites", "persist", "total"} <= set(ms)
     assert "model_failed" not in ms
 
@@ -108,6 +137,7 @@ def test_failures_still_record_their_timings(tmp_path, monkeypatch):
 def test_stage_spans_carry_only_ids_and_categories(tmp_path, spans):
     with app_client(tmp_path) as client:
         headers = {**login(client), "X-Correlation-ID": "trace-stage-spans"}
+        spans.clear()
         reply(client, headers, REPORT)
     finished = spans.get_finished_spans()
     assert {"alsense.session", "alsense.route", "alsense.tool", "alsense.guard", "alsense.persist"} <= {
@@ -122,6 +152,11 @@ def test_stage_spans_carry_only_ids_and_categories(tmp_path, spans):
         "list_report_types",
         "prepare_report",
     }
+    assert [span.attributes["alsense.operation"] for span in finished if span.name == "alsense.api"] == [
+        "sites.permitted_sites",
+        "sites.active_alarms",
+        "reports.report_types",
+    ]
     text = json.dumps([dict(span.attributes) for span in finished])
     assert "Demo North" not in text and "temperature" not in text and "seven" not in text
 
@@ -133,6 +168,52 @@ def test_a_failed_stage_names_the_exception_type_only(spans):
     [span] = spans.get_finished_spans()
     assert (span.status.status_code.name, span.status.description) == ("ERROR", "ValueError")
     assert not span.events and timings.count == {"guard": 1}
+
+
+def test_api_spans_include_each_call_and_failure_but_no_arguments_or_exception_text(spans):
+    timings = timing.Timings("trace-api-failure")
+    secret = "sensitive argument and exception text"
+
+    def broken(value):
+        raise ValueError(value)
+
+    with pytest.raises(ValueError):
+        timings.api("knowledge.search", broken, secret)
+    [span] = spans.get_finished_spans()
+    assert span.name == "alsense.api" and span.attributes["alsense.operation"] == "knowledge.search"
+    assert span.status.description == "ValueError" and not span.events
+    assert timings.count == {"api_calls": 1, "api.knowledge.search": 1}
+    assert secret not in json.dumps(dict(span.attributes))
+    with pytest.raises(ValueError, match="Unknown API"):
+        timings.api(secret, broken, secret)
+
+
+def test_http_total_and_failed_chat_logs_are_correlated_without_sensitive_exception_text(tmp_path, monkeypatch):
+    secret = "prompt-or-token-must-not-be-logged"
+    records: list[logging.LogRecord] = []
+    handler = logging.Handler()
+    handler.emit = records.append
+    logger = logging.getLogger("alsense_chat")
+    logger.addHandler(handler)
+
+    def broken(message, ctx):
+        raise RuntimeError(secret)
+        yield
+
+    monkeypatch.setattr(alsense_chat.app, "demo_run", broken)
+    try:
+        with app_client(tmp_path) as client:
+            headers = {**login(client), "X-Correlation-ID": "trace-log-privacy"}
+            response = client.post("/api/chat", headers=headers, json={"message": secret})
+            assert "event: error" in response.text
+    finally:
+        logger.removeHandler(handler)
+    matched = [record for record in records if getattr(record, "correlation_id", "") == "trace-log-privacy"]
+    [request] = [record for record in matched if getattr(record, "event", "") == "http_timing"]
+    assert request.http_total_ms >= trail(tmp_path, "chat")[0]["timings"]["ms"]["total"]
+    [failure] = [record for record in matched if getattr(record, "event", "") == "runtime_error"]
+    assert failure.error_type == "RuntimeError" and failure.exc_info is None
+    assert secret not in json.dumps([record.__dict__ for record in matched], default=str)
 
 
 def test_client_timings_are_numbers_for_a_request_of_the_same_session(tmp_path):

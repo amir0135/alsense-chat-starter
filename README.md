@@ -204,6 +204,10 @@ uv run python scripts/dev.py usage     # requests, errors, latency, tokens and e
 uv run python scripts/dev.py measure   # measured run of the sample flows, then the latency and usage reports
 ```
 
+For the request-path investigation, reproducible offline before/after benchmark, correlation/timing fields and
+real-provider measurement limitations, see [`PERFORMANCE.md`](PERFORMANCE.md). The offline benchmark uses a
+deterministic Responses replay, not Azure latency; `measure` uses the configured assistant and can make billed calls.
+
 `tests/test_scenarios.py` runs every demo scenario and checks its promised result. Each evaluation case in `evals/`
 states a question, the user's sites, the expected tools, parameters, clarification and result, whether the user
 must confirm, and what must never happen; [`evals/README.md`](evals/README.md) explains the format and model mode.
