@@ -1,0 +1,3360 @@
+{
+  "provider": "offline deterministic Responses replay; NOT Azure/LLM measurements",
+  "transport": "real widget in headless Chrome over loopback HTTP; NOT iframe/dashboard execution",
+  "browser": "Chrome/157.0.8103.79",
+  "python": "3.12.10",
+  "base_commit": "6c72c1166054d9820077b4754d30410c572175b7",
+  "production_source_revision": "21a74f5ee730d1da89e7b6f8a8a5a91584047a3c",
+  "production_source_dirty": false,
+  "profile": {
+    "model_delay_ms_per_call": 40.0,
+    "adapter_delay_ms_per_call": 15.0
+  },
+  "runs_per_scenario": 5,
+  "warmups_per_scenario": 1,
+  "scenario": "Open the alarms page and show only critical and high priority alarms.",
+  "p95_note": "Nearest rank; with five samples this is the maximum, not a stable tail estimate.",
+  "results": {
+    "dashboard_scripted": {
+      "median_send_to_stream_end_ms": 24,
+      "p95_nearest_rank_send_to_stream_end_ms": 25.300000000745058,
+      "samples": [
+        {
+          "ok": true,
+          "send_to_stream_end_ms": 24,
+          "correlation_id": "29bef23a-1167-4032-b196-968c8c822752",
+          "browser_measures": [
+            {
+              "name": "alsense chat headers",
+              "duration_ms": 1.2000000029802322,
+              "detail": {
+                "correlation_id": "29bef23a-1167-4032-b196-968c8c822752"
+              }
+            },
+            {
+              "name": "alsense chat first_event",
+              "duration_ms": 1.6000000014901161,
+              "detail": {
+                "correlation_id": "29bef23a-1167-4032-b196-968c8c822752"
+              }
+            },
+            {
+              "name": "alsense chat reply",
+              "duration_ms": 22.5,
+              "detail": {
+                "correlation_id": "29bef23a-1167-4032-b196-968c8c822752"
+              }
+            },
+            {
+              "name": "alsense chat rendered",
+              "duration_ms": 39.400000002235174,
+              "detail": {
+                "correlation_id": "29bef23a-1167-4032-b196-968c8c822752"
+              }
+            },
+            {
+              "name": "alsense chat_render",
+              "duration_ms": 16.900000002235174,
+              "detail": {
+                "correlation_id": "29bef23a-1167-4032-b196-968c8c822752"
+              }
+            }
+          ],
+          "resource_timing": [
+            {
+              "fetch_to_headers_ms": 1,
+              "fetch_to_end_ms": 23.5,
+              "request_start_ms": 0.10000000149011612
+            }
+          ],
+          "backend_ms": {
+            "session": 0.29,
+            "route": 0.39,
+            "first_event": 1.2,
+            "api_calls": 18.77,
+            "api.knowledge.search": 18.77,
+            "tools": 18.9,
+            "tool.search_docs": 18.9,
+            "guard": 0.33,
+            "persist": 1.0,
+            "reply": 21.87,
+            "total": 22.12
+          },
+          "backend_count": {
+            "session": 1,
+            "route": 1,
+            "first_event": 1,
+            "api_calls": 1,
+            "api.knowledge.search": 1,
+            "tools": 1,
+            "tool.search_docs": 1,
+            "guard": 1,
+            "persist": 1,
+            "reply": 1,
+            "total": 1
+          },
+          "model_calls": 0,
+          "tool_calls": 1,
+          "adapter_calls": 1,
+          "adapter_calls_by_operation": {
+            "knowledge.search": 1
+          },
+          "model_request_bytes": [],
+          "model_request_metrics": [],
+          "ui_command_count": 0
+        },
+        {
+          "ok": true,
+          "send_to_stream_end_ms": 24.800000000745058,
+          "correlation_id": "e9e3cf3c-56c3-4a98-8a27-bf9468bb2d96",
+          "browser_measures": [
+            {
+              "name": "alsense chat headers",
+              "duration_ms": 1.2999999970197678,
+              "detail": {
+                "correlation_id": "e9e3cf3c-56c3-4a98-8a27-bf9468bb2d96"
+              }
+            },
+            {
+              "name": "alsense chat first_event",
+              "duration_ms": 1.7999999970197678,
+              "detail": {
+                "correlation_id": "e9e3cf3c-56c3-4a98-8a27-bf9468bb2d96"
+              }
+            },
+            {
+              "name": "alsense chat reply",
+              "duration_ms": 22.899999998509884,
+              "detail": {
+                "correlation_id": "e9e3cf3c-56c3-4a98-8a27-bf9468bb2d96"
+              }
+            },
+            {
+              "name": "alsense chat rendered",
+              "duration_ms": 32.69999999925494,
+              "detail": {
+                "correlation_id": "e9e3cf3c-56c3-4a98-8a27-bf9468bb2d96"
+              }
+            },
+            {
+              "name": "alsense chat_render",
+              "duration_ms": 9.800000000745058,
+              "detail": {
+                "correlation_id": "e9e3cf3c-56c3-4a98-8a27-bf9468bb2d96"
+              }
+            }
+          ],
+          "resource_timing": [
+            {
+              "fetch_to_headers_ms": 1.1000000014901161,
+              "fetch_to_end_ms": 24.300000000745058,
+              "request_start_ms": 0.10000000149011612
+            }
+          ],
+          "backend_ms": {
+            "session": 0.37,
+            "route": 0.41,
+            "first_event": 1.36,
+            "api_calls": 18.77,
+            "api.knowledge.search": 18.77,
+            "tools": 18.93,
+            "tool.search_docs": 18.93,
+            "guard": 0.34,
+            "persist": 1.17,
+            "reply": 22.33,
+            "total": 22.51
+          },
+          "backend_count": {
+            "session": 1,
+            "route": 1,
+            "first_event": 1,
+            "api_calls": 1,
+            "api.knowledge.search": 1,
+            "tools": 1,
+            "tool.search_docs": 1,
+            "guard": 1,
+            "persist": 1,
+            "reply": 1,
+            "total": 1
+          },
+          "model_calls": 0,
+          "tool_calls": 1,
+          "adapter_calls": 1,
+          "adapter_calls_by_operation": {
+            "knowledge.search": 1
+          },
+          "model_request_bytes": [],
+          "model_request_metrics": [],
+          "ui_command_count": 0
+        },
+        {
+          "ok": true,
+          "send_to_stream_end_ms": 25.300000000745058,
+          "correlation_id": "a3674de2-14bf-4ba9-9f99-b34997ff16e4",
+          "browser_measures": [
+            {
+              "name": "alsense chat headers",
+              "duration_ms": 1.2999999970197678,
+              "detail": {
+                "correlation_id": "a3674de2-14bf-4ba9-9f99-b34997ff16e4"
+              }
+            },
+            {
+              "name": "alsense chat first_event",
+              "duration_ms": 1.7999999970197678,
+              "detail": {
+                "correlation_id": "a3674de2-14bf-4ba9-9f99-b34997ff16e4"
+              }
+            },
+            {
+              "name": "alsense chat reply",
+              "duration_ms": 23,
+              "detail": {
+                "correlation_id": "a3674de2-14bf-4ba9-9f99-b34997ff16e4"
+              }
+            },
+            {
+              "name": "alsense chat rendered",
+              "duration_ms": 24.699999999254942,
+              "detail": {
+                "correlation_id": "a3674de2-14bf-4ba9-9f99-b34997ff16e4"
+              }
+            },
+            {
+              "name": "alsense chat_render",
+              "duration_ms": 1.699999999254942,
+              "detail": {
+                "correlation_id": "a3674de2-14bf-4ba9-9f99-b34997ff16e4"
+              }
+            }
+          ],
+          "resource_timing": [
+            {
+              "fetch_to_headers_ms": 1.1000000014901161,
+              "fetch_to_end_ms": 24.400000002235174,
+              "request_start_ms": 0.19999999925494194
+            }
+          ],
+          "backend_ms": {
+            "session": 0.36,
+            "route": 0.39,
+            "first_event": 1.31,
+            "api_calls": 18.77,
+            "api.knowledge.search": 18.77,
+            "tools": 18.88,
+            "tool.search_docs": 18.88,
+            "guard": 0.31,
+            "persist": 1.47,
+            "reply": 22.42,
+            "total": 22.58
+          },
+          "backend_count": {
+            "session": 1,
+            "route": 1,
+            "first_event": 1,
+            "api_calls": 1,
+            "api.knowledge.search": 1,
+            "tools": 1,
+            "tool.search_docs": 1,
+            "guard": 1,
+            "persist": 1,
+            "reply": 1,
+            "total": 1
+          },
+          "model_calls": 0,
+          "tool_calls": 1,
+          "adapter_calls": 1,
+          "adapter_calls_by_operation": {
+            "knowledge.search": 1
+          },
+          "model_request_bytes": [],
+          "model_request_metrics": [],
+          "ui_command_count": 0
+        },
+        {
+          "ok": true,
+          "send_to_stream_end_ms": 23.399999998509884,
+          "correlation_id": "adf7261f-7a95-47ed-958c-25046f453ffb",
+          "browser_measures": [
+            {
+              "name": "alsense chat headers",
+              "duration_ms": 1.5,
+              "detail": {
+                "correlation_id": "adf7261f-7a95-47ed-958c-25046f453ffb"
+              }
+            },
+            {
+              "name": "alsense chat first_event",
+              "duration_ms": 2,
+              "detail": {
+                "correlation_id": "adf7261f-7a95-47ed-958c-25046f453ffb"
+              }
+            },
+            {
+              "name": "alsense chat reply",
+              "duration_ms": 21.5,
+              "detail": {
+                "correlation_id": "adf7261f-7a95-47ed-958c-25046f453ffb"
+              }
+            },
+            {
+              "name": "alsense chat rendered",
+              "duration_ms": 38.80000000074506,
+              "detail": {
+                "correlation_id": "adf7261f-7a95-47ed-958c-25046f453ffb"
+              }
+            },
+            {
+              "name": "alsense chat_render",
+              "duration_ms": 17.300000000745058,
+              "detail": {
+                "correlation_id": "adf7261f-7a95-47ed-958c-25046f453ffb"
+              }
+            }
+          ],
+          "resource_timing": [
+            {
+              "fetch_to_headers_ms": 1.199999999254942,
+              "fetch_to_end_ms": 22.800000000745058,
+              "request_start_ms": 0.19999999925494194
+            }
+          ],
+          "backend_ms": {
+            "session": 0.34,
+            "route": 0.46,
+            "first_event": 1.42,
+            "api_calls": 16.74,
+            "api.knowledge.search": 16.74,
+            "tools": 16.87,
+            "tool.search_docs": 16.87,
+            "guard": 0.37,
+            "persist": 1.63,
+            "reply": 20.82,
+            "total": 21.02
+          },
+          "backend_count": {
+            "session": 1,
+            "route": 1,
+            "first_event": 1,
+            "api_calls": 1,
+            "api.knowledge.search": 1,
+            "tools": 1,
+            "tool.search_docs": 1,
+            "guard": 1,
+            "persist": 1,
+            "reply": 1,
+            "total": 1
+          },
+          "model_calls": 0,
+          "tool_calls": 1,
+          "adapter_calls": 1,
+          "adapter_calls_by_operation": {
+            "knowledge.search": 1
+          },
+          "model_request_bytes": [],
+          "model_request_metrics": [],
+          "ui_command_count": 0
+        },
+        {
+          "ok": true,
+          "send_to_stream_end_ms": 23.800000000745058,
+          "correlation_id": "770648a3-3436-4494-9b4c-ba884e5918ea",
+          "browser_measures": [
+            {
+              "name": "alsense chat headers",
+              "duration_ms": 1.199999999254942,
+              "detail": {
+                "correlation_id": "770648a3-3436-4494-9b4c-ba884e5918ea"
+              }
+            },
+            {
+              "name": "alsense chat first_event",
+              "duration_ms": 1.699999999254942,
+              "detail": {
+                "correlation_id": "770648a3-3436-4494-9b4c-ba884e5918ea"
+              }
+            },
+            {
+              "name": "alsense chat reply",
+              "duration_ms": 22.399999998509884,
+              "detail": {
+                "correlation_id": "770648a3-3436-4494-9b4c-ba884e5918ea"
+              }
+            },
+            {
+              "name": "alsense chat rendered",
+              "duration_ms": 33.29999999701977,
+              "detail": {
+                "correlation_id": "770648a3-3436-4494-9b4c-ba884e5918ea"
+              }
+            },
+            {
+              "name": "alsense chat_render",
+              "duration_ms": 10.899999998509884,
+              "detail": {
+                "correlation_id": "770648a3-3436-4494-9b4c-ba884e5918ea"
+              }
+            }
+          ],
+          "resource_timing": [
+            {
+              "fetch_to_headers_ms": 1.0999999977648258,
+              "fetch_to_end_ms": 23.599999997764826,
+              "request_start_ms": 0.19999999925494194
+            }
+          ],
+          "backend_ms": {
+            "session": 0.33,
+            "route": 0.33,
+            "first_event": 1.18,
+            "api_calls": 18.78,
+            "api.knowledge.search": 18.78,
+            "tools": 18.9,
+            "tool.search_docs": 18.9,
+            "guard": 0.29,
+            "persist": 1.07,
+            "reply": 21.92,
+            "total": 22.08
+          },
+          "backend_count": {
+            "session": 1,
+            "route": 1,
+            "first_event": 1,
+            "api_calls": 1,
+            "api.knowledge.search": 1,
+            "tools": 1,
+            "tool.search_docs": 1,
+            "guard": 1,
+            "persist": 1,
+            "reply": 1,
+            "total": 1
+          },
+          "model_calls": 0,
+          "tool_calls": 1,
+          "adapter_calls": 1,
+          "adapter_calls_by_operation": {
+            "knowledge.search": 1
+          },
+          "model_request_bytes": [],
+          "model_request_metrics": [],
+          "ui_command_count": 0
+        }
+      ]
+    },
+    "dashboard_direct": {
+      "median_send_to_stream_end_ms": 53.30000000074506,
+      "p95_nearest_rank_send_to_stream_end_ms": 56.399999998509884,
+      "samples": [
+        {
+          "ok": true,
+          "send_to_stream_end_ms": 56.399999998509884,
+          "correlation_id": "48337c39-6d3e-4059-90f0-f08a85b57db4",
+          "browser_measures": [
+            {
+              "name": "alsense chat headers",
+              "duration_ms": 2.199999999254942,
+              "detail": {
+                "correlation_id": "48337c39-6d3e-4059-90f0-f08a85b57db4"
+              }
+            },
+            {
+              "name": "alsense chat first_event",
+              "duration_ms": 54,
+              "detail": {
+                "correlation_id": "48337c39-6d3e-4059-90f0-f08a85b57db4"
+              }
+            },
+            {
+              "name": "alsense chat reply",
+              "duration_ms": 54,
+              "detail": {
+                "correlation_id": "48337c39-6d3e-4059-90f0-f08a85b57db4"
+              }
+            },
+            {
+              "name": "alsense chat rendered",
+              "duration_ms": 71.40000000223517,
+              "detail": {
+                "correlation_id": "48337c39-6d3e-4059-90f0-f08a85b57db4"
+              }
+            },
+            {
+              "name": "alsense chat_render",
+              "duration_ms": 17.400000002235174,
+              "detail": {
+                "correlation_id": "48337c39-6d3e-4059-90f0-f08a85b57db4"
+              }
+            }
+          ],
+          "resource_timing": [
+            {
+              "fetch_to_headers_ms": 2,
+              "fetch_to_end_ms": 55.80000000074506,
+              "request_start_ms": 0.19999999925494194
+            }
+          ],
+          "backend_ms": {
+            "session": 0.61,
+            "history": 0.33,
+            "route": 1.53,
+            "first_model_response": 48.6,
+            "model_answer": 45.13,
+            "guard": 0.28,
+            "persist": 1.65,
+            "first_event": 52.65,
+            "reply": 52.65,
+            "total": 53.17
+          },
+          "backend_count": {
+            "session": 1,
+            "history": 1,
+            "route": 1,
+            "first_model_response": 1,
+            "model_answer": 1,
+            "guard": 1,
+            "persist": 1,
+            "first_event": 1,
+            "reply": 1,
+            "total": 1
+          },
+          "model_calls": 1,
+          "tool_calls": 0,
+          "adapter_calls": 0,
+          "adapter_calls_by_operation": {},
+          "model_request_bytes": [
+            5426
+          ],
+          "model_request_metrics": [
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 102,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 1
+            }
+          ],
+          "ui_command_count": 0
+        },
+        {
+          "ok": true,
+          "send_to_stream_end_ms": 53.30000000074506,
+          "correlation_id": "5dcacb26-a619-4b2a-aee8-9e5b461e8987",
+          "browser_measures": [
+            {
+              "name": "alsense chat headers",
+              "duration_ms": 1.699999999254942,
+              "detail": {
+                "correlation_id": "5dcacb26-a619-4b2a-aee8-9e5b461e8987"
+              }
+            },
+            {
+              "name": "alsense chat first_event",
+              "duration_ms": 51.399999998509884,
+              "detail": {
+                "correlation_id": "5dcacb26-a619-4b2a-aee8-9e5b461e8987"
+              }
+            },
+            {
+              "name": "alsense chat reply",
+              "duration_ms": 51.399999998509884,
+              "detail": {
+                "correlation_id": "5dcacb26-a619-4b2a-aee8-9e5b461e8987"
+              }
+            },
+            {
+              "name": "alsense chat rendered",
+              "duration_ms": 68.79999999701977,
+              "detail": {
+                "correlation_id": "5dcacb26-a619-4b2a-aee8-9e5b461e8987"
+              }
+            },
+            {
+              "name": "alsense chat_render",
+              "duration_ms": 17.5,
+              "detail": {
+                "correlation_id": "5dcacb26-a619-4b2a-aee8-9e5b461e8987"
+              }
+            }
+          ],
+          "resource_timing": [
+            {
+              "fetch_to_headers_ms": 1.300000000745058,
+              "fetch_to_end_ms": 52.80000000074506,
+              "request_start_ms": 0.10000000149011612
+            }
+          ],
+          "backend_ms": {
+            "session": 0.46,
+            "history": 0.2,
+            "route": 0.88,
+            "first_model_response": 47.4,
+            "model_answer": 45.12,
+            "guard": 0.28,
+            "persist": 1.25,
+            "first_event": 50.64,
+            "reply": 50.64,
+            "total": 51.02
+          },
+          "backend_count": {
+            "session": 1,
+            "history": 1,
+            "route": 1,
+            "first_model_response": 1,
+            "model_answer": 1,
+            "guard": 1,
+            "persist": 1,
+            "first_event": 1,
+            "reply": 1,
+            "total": 1
+          },
+          "model_calls": 1,
+          "tool_calls": 0,
+          "adapter_calls": 0,
+          "adapter_calls_by_operation": {},
+          "model_request_bytes": [
+            5426
+          ],
+          "model_request_metrics": [
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 102,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 1
+            }
+          ],
+          "ui_command_count": 0
+        },
+        {
+          "ok": true,
+          "send_to_stream_end_ms": 52.400000002235174,
+          "correlation_id": "37976efe-6610-48bb-98c9-b1d724d5bbf2",
+          "browser_measures": [
+            {
+              "name": "alsense chat headers",
+              "duration_ms": 1.699999999254942,
+              "detail": {
+                "correlation_id": "37976efe-6610-48bb-98c9-b1d724d5bbf2"
+              }
+            },
+            {
+              "name": "alsense chat first_event",
+              "duration_ms": 50.19999999925494,
+              "detail": {
+                "correlation_id": "37976efe-6610-48bb-98c9-b1d724d5bbf2"
+              }
+            },
+            {
+              "name": "alsense chat reply",
+              "duration_ms": 50.19999999925494,
+              "detail": {
+                "correlation_id": "37976efe-6610-48bb-98c9-b1d724d5bbf2"
+              }
+            },
+            {
+              "name": "alsense chat rendered",
+              "duration_ms": 65,
+              "detail": {
+                "correlation_id": "37976efe-6610-48bb-98c9-b1d724d5bbf2"
+              }
+            },
+            {
+              "name": "alsense chat_render",
+              "duration_ms": 14.800000000745058,
+              "detail": {
+                "correlation_id": "37976efe-6610-48bb-98c9-b1d724d5bbf2"
+              }
+            }
+          ],
+          "resource_timing": [
+            {
+              "fetch_to_headers_ms": 1.3999999985098839,
+              "fetch_to_end_ms": 51.79999999701977,
+              "request_start_ms": 0.19999999925494194
+            }
+          ],
+          "backend_ms": {
+            "session": 0.4,
+            "history": 0.21,
+            "route": 1.17,
+            "first_model_response": 45.43,
+            "model_answer": 42.97,
+            "guard": 0.31,
+            "persist": 1.49,
+            "first_event": 49.25,
+            "reply": 49.25,
+            "total": 49.67
+          },
+          "backend_count": {
+            "session": 1,
+            "history": 1,
+            "route": 1,
+            "first_model_response": 1,
+            "model_answer": 1,
+            "guard": 1,
+            "persist": 1,
+            "first_event": 1,
+            "reply": 1,
+            "total": 1
+          },
+          "model_calls": 1,
+          "tool_calls": 0,
+          "adapter_calls": 0,
+          "adapter_calls_by_operation": {},
+          "model_request_bytes": [
+            5426
+          ],
+          "model_request_metrics": [
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 102,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 1
+            }
+          ],
+          "ui_command_count": 0
+        },
+        {
+          "ok": true,
+          "send_to_stream_end_ms": 51.69999999925494,
+          "correlation_id": "e19dc718-1287-41d9-b027-0a332f4885bf",
+          "browser_measures": [
+            {
+              "name": "alsense chat headers",
+              "duration_ms": 1.5999999977648258,
+              "detail": {
+                "correlation_id": "e19dc718-1287-41d9-b027-0a332f4885bf"
+              }
+            },
+            {
+              "name": "alsense chat first_event",
+              "duration_ms": 49.399999998509884,
+              "detail": {
+                "correlation_id": "e19dc718-1287-41d9-b027-0a332f4885bf"
+              }
+            },
+            {
+              "name": "alsense chat reply",
+              "duration_ms": 49.399999998509884,
+              "detail": {
+                "correlation_id": "e19dc718-1287-41d9-b027-0a332f4885bf"
+              }
+            },
+            {
+              "name": "alsense chat rendered",
+              "duration_ms": 60.19999999925494,
+              "detail": {
+                "correlation_id": "e19dc718-1287-41d9-b027-0a332f4885bf"
+              }
+            },
+            {
+              "name": "alsense chat_render",
+              "duration_ms": 10.800000000745058,
+              "detail": {
+                "correlation_id": "e19dc718-1287-41d9-b027-0a332f4885bf"
+              }
+            }
+          ],
+          "resource_timing": [
+            {
+              "fetch_to_headers_ms": 1.300000000745058,
+              "fetch_to_end_ms": 51.100000001490116,
+              "request_start_ms": 0.19999999925494194
+            }
+          ],
+          "backend_ms": {
+            "session": 0.35,
+            "history": 0.25,
+            "route": 1.12,
+            "first_model_response": 44.81,
+            "model_answer": 42.43,
+            "guard": 0.3,
+            "persist": 1.41,
+            "first_event": 48.47,
+            "reply": 48.47,
+            "total": 48.9
+          },
+          "backend_count": {
+            "session": 1,
+            "history": 1,
+            "route": 1,
+            "first_model_response": 1,
+            "model_answer": 1,
+            "guard": 1,
+            "persist": 1,
+            "first_event": 1,
+            "reply": 1,
+            "total": 1
+          },
+          "model_calls": 1,
+          "tool_calls": 0,
+          "adapter_calls": 0,
+          "adapter_calls_by_operation": {},
+          "model_request_bytes": [
+            5426
+          ],
+          "model_request_metrics": [
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 102,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 1
+            }
+          ],
+          "ui_command_count": 0
+        },
+        {
+          "ok": true,
+          "send_to_stream_end_ms": 54,
+          "correlation_id": "5b2e31c1-36d4-4dcc-804a-59d0bfae7bbb",
+          "browser_measures": [
+            {
+              "name": "alsense chat headers",
+              "duration_ms": 1.699999999254942,
+              "detail": {
+                "correlation_id": "5b2e31c1-36d4-4dcc-804a-59d0bfae7bbb"
+              }
+            },
+            {
+              "name": "alsense chat first_event",
+              "duration_ms": 51.80000000074506,
+              "detail": {
+                "correlation_id": "5b2e31c1-36d4-4dcc-804a-59d0bfae7bbb"
+              }
+            },
+            {
+              "name": "alsense chat reply",
+              "duration_ms": 51.80000000074506,
+              "detail": {
+                "correlation_id": "5b2e31c1-36d4-4dcc-804a-59d0bfae7bbb"
+              }
+            },
+            {
+              "name": "alsense chat rendered",
+              "duration_ms": 56.19999999925494,
+              "detail": {
+                "correlation_id": "5b2e31c1-36d4-4dcc-804a-59d0bfae7bbb"
+              }
+            },
+            {
+              "name": "alsense chat_render",
+              "duration_ms": 4.399999998509884,
+              "detail": {
+                "correlation_id": "5b2e31c1-36d4-4dcc-804a-59d0bfae7bbb"
+              }
+            }
+          ],
+          "resource_timing": [
+            {
+              "fetch_to_headers_ms": 1.5,
+              "fetch_to_end_ms": 53.5,
+              "request_start_ms": 0.19999999925494194
+            }
+          ],
+          "backend_ms": {
+            "session": 0.49,
+            "history": 0.24,
+            "route": 1.37,
+            "first_model_response": 47.3,
+            "model_answer": 44.5,
+            "guard": 0.29,
+            "persist": 1.43,
+            "first_event": 50.86,
+            "reply": 50.86,
+            "total": 51.21
+          },
+          "backend_count": {
+            "session": 1,
+            "history": 1,
+            "route": 1,
+            "first_model_response": 1,
+            "model_answer": 1,
+            "guard": 1,
+            "persist": 1,
+            "first_event": 1,
+            "reply": 1,
+            "total": 1
+          },
+          "model_calls": 1,
+          "tool_calls": 0,
+          "adapter_calls": 0,
+          "adapter_calls_by_operation": {},
+          "model_request_bytes": [
+            5426
+          ],
+          "model_request_metrics": [
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 102,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 1
+            }
+          ],
+          "ui_command_count": 0
+        }
+      ]
+    },
+    "dashboard_sites": {
+      "median_send_to_stream_end_ms": 135.5,
+      "p95_nearest_rank_send_to_stream_end_ms": 143.30000000074506,
+      "samples": [
+        {
+          "ok": true,
+          "send_to_stream_end_ms": 142.79999999701977,
+          "correlation_id": "61005384-2fd0-4301-b177-5182ba2dcda0",
+          "browser_measures": [
+            {
+              "name": "alsense chat headers",
+              "duration_ms": 2.099999997764826,
+              "detail": {
+                "correlation_id": "61005384-2fd0-4301-b177-5182ba2dcda0"
+              }
+            },
+            {
+              "name": "alsense chat first_event",
+              "duration_ms": 49.399999998509884,
+              "detail": {
+                "correlation_id": "61005384-2fd0-4301-b177-5182ba2dcda0"
+              }
+            },
+            {
+              "name": "alsense chat reply",
+              "duration_ms": 137.80000000074506,
+              "detail": {
+                "correlation_id": "61005384-2fd0-4301-b177-5182ba2dcda0"
+              }
+            },
+            {
+              "name": "alsense chat rendered",
+              "duration_ms": 146.09999999776483,
+              "detail": {
+                "correlation_id": "61005384-2fd0-4301-b177-5182ba2dcda0"
+              }
+            },
+            {
+              "name": "alsense chat_render",
+              "duration_ms": 8.299999997019768,
+              "detail": {
+                "correlation_id": "61005384-2fd0-4301-b177-5182ba2dcda0"
+              }
+            }
+          ],
+          "resource_timing": [
+            {
+              "fetch_to_headers_ms": 1.800000000745058,
+              "fetch_to_end_ms": 141.90000000223517,
+              "request_start_ms": 0.20000000298023224
+            }
+          ],
+          "backend_ms": {
+            "session": 0.51,
+            "history": 0.27,
+            "route": 1.42,
+            "first_model_response": 48.27,
+            "model_tool_selection": 45.14,
+            "first_event": 48.33,
+            "api_calls": 34.54,
+            "api.sites.permitted_sites": 18.8,
+            "api.sites.active_alarms": 15.75,
+            "tools": 34.97,
+            "tool.get_permitted_sites": 34.97,
+            "model_answer": 45.36,
+            "model_followup": 45.36,
+            "guard": 1.24,
+            "persist": 4.74,
+            "reply": 136.24,
+            "total": 137.13
+          },
+          "backend_count": {
+            "session": 1,
+            "history": 1,
+            "route": 1,
+            "first_model_response": 1,
+            "model_tool_selection": 1,
+            "first_event": 1,
+            "api_calls": 2,
+            "api.sites.permitted_sites": 1,
+            "api.sites.active_alarms": 1,
+            "tools": 1,
+            "tool.get_permitted_sites": 1,
+            "model_answer": 1,
+            "model_followup": 1,
+            "guard": 1,
+            "persist": 1,
+            "reply": 1,
+            "total": 1
+          },
+          "model_calls": 2,
+          "tool_calls": 1,
+          "adapter_calls": 2,
+          "adapter_calls_by_operation": {
+            "sites.permitted_sites": 1,
+            "sites.active_alarms": 1
+          },
+          "model_request_bytes": [
+            5426,
+            5881
+          ],
+          "model_request_metrics": [
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 102,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 1
+            },
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 557,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 3
+            }
+          ],
+          "ui_command_count": 0
+        },
+        {
+          "ok": true,
+          "send_to_stream_end_ms": 143.30000000074506,
+          "correlation_id": "3153b34c-d180-4260-a306-f6d5c1e32cc0",
+          "browser_measures": [
+            {
+              "name": "alsense chat headers",
+              "duration_ms": 2.800000000745058,
+              "detail": {
+                "correlation_id": "3153b34c-d180-4260-a306-f6d5c1e32cc0"
+              }
+            },
+            {
+              "name": "alsense chat first_event",
+              "duration_ms": 49.80000000074506,
+              "detail": {
+                "correlation_id": "3153b34c-d180-4260-a306-f6d5c1e32cc0"
+              }
+            },
+            {
+              "name": "alsense chat reply",
+              "duration_ms": 136.10000000149012,
+              "detail": {
+                "correlation_id": "3153b34c-d180-4260-a306-f6d5c1e32cc0"
+              }
+            },
+            {
+              "name": "alsense chat rendered",
+              "duration_ms": 142.10000000149012,
+              "detail": {
+                "correlation_id": "3153b34c-d180-4260-a306-f6d5c1e32cc0"
+              }
+            },
+            {
+              "name": "alsense chat_render",
+              "duration_ms": 5.900000002235174,
+              "detail": {
+                "correlation_id": "3153b34c-d180-4260-a306-f6d5c1e32cc0"
+              }
+            }
+          ],
+          "resource_timing": [
+            {
+              "fetch_to_headers_ms": 2.2999999970197678,
+              "fetch_to_end_ms": 141.59999999776483,
+              "request_start_ms": 0.3999999985098839
+            }
+          ],
+          "backend_ms": {
+            "session": 0.8,
+            "history": 0.52,
+            "route": 1.9,
+            "first_model_response": 48.48,
+            "model_tool_selection": 44.26,
+            "first_event": 48.54,
+            "api_calls": 36.16,
+            "api.sites.permitted_sites": 17.31,
+            "api.sites.active_alarms": 18.85,
+            "tools": 36.63,
+            "tool.get_permitted_sites": 36.63,
+            "model_answer": 41.71,
+            "model_followup": 41.71,
+            "guard": 1.19,
+            "persist": 4.39,
+            "reply": 134.04,
+            "total": 135.61
+          },
+          "backend_count": {
+            "session": 1,
+            "history": 1,
+            "route": 1,
+            "first_model_response": 1,
+            "model_tool_selection": 1,
+            "first_event": 1,
+            "api_calls": 2,
+            "api.sites.permitted_sites": 1,
+            "api.sites.active_alarms": 1,
+            "tools": 1,
+            "tool.get_permitted_sites": 1,
+            "model_answer": 1,
+            "model_followup": 1,
+            "guard": 1,
+            "persist": 1,
+            "reply": 1,
+            "total": 1
+          },
+          "model_calls": 2,
+          "tool_calls": 1,
+          "adapter_calls": 2,
+          "adapter_calls_by_operation": {
+            "sites.permitted_sites": 1,
+            "sites.active_alarms": 1
+          },
+          "model_request_bytes": [
+            5426,
+            5881
+          ],
+          "model_request_metrics": [
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 102,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 1
+            },
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 557,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 3
+            }
+          ],
+          "ui_command_count": 0
+        },
+        {
+          "ok": true,
+          "send_to_stream_end_ms": 134.40000000223517,
+          "correlation_id": "6977b820-336c-4ffc-abb8-31d9313b0a32",
+          "browser_measures": [
+            {
+              "name": "alsense chat headers",
+              "duration_ms": 2.300000000745058,
+              "detail": {
+                "correlation_id": "6977b820-336c-4ffc-abb8-31d9313b0a32"
+              }
+            },
+            {
+              "name": "alsense chat first_event",
+              "duration_ms": 48.899999998509884,
+              "detail": {
+                "correlation_id": "6977b820-336c-4ffc-abb8-31d9313b0a32"
+              }
+            },
+            {
+              "name": "alsense chat reply",
+              "duration_ms": 132.10000000149012,
+              "detail": {
+                "correlation_id": "6977b820-336c-4ffc-abb8-31d9313b0a32"
+              }
+            },
+            {
+              "name": "alsense chat rendered",
+              "duration_ms": 148.30000000074506,
+              "detail": {
+                "correlation_id": "6977b820-336c-4ffc-abb8-31d9313b0a32"
+              }
+            },
+            {
+              "name": "alsense chat_render",
+              "duration_ms": 16.299999997019768,
+              "detail": {
+                "correlation_id": "6977b820-336c-4ffc-abb8-31d9313b0a32"
+              }
+            }
+          ],
+          "resource_timing": [
+            {
+              "fetch_to_headers_ms": 2.099999997764826,
+              "fetch_to_end_ms": 133.79999999701977,
+              "request_start_ms": 0.29999999701976776
+            }
+          ],
+          "backend_ms": {
+            "session": 0.65,
+            "history": 0.31,
+            "route": 1.41,
+            "first_model_response": 47.66,
+            "model_tool_selection": 44.38,
+            "first_event": 47.75,
+            "api_calls": 34.6,
+            "api.sites.permitted_sites": 18.78,
+            "api.sites.active_alarms": 15.83,
+            "tools": 34.96,
+            "tool.get_permitted_sites": 34.96,
+            "model_answer": 45.15,
+            "model_followup": 45.15,
+            "guard": 0.24,
+            "persist": 1.56,
+            "reply": 130.97,
+            "total": 131.44
+          },
+          "backend_count": {
+            "session": 1,
+            "history": 1,
+            "route": 1,
+            "first_model_response": 1,
+            "model_tool_selection": 1,
+            "first_event": 1,
+            "api_calls": 2,
+            "api.sites.permitted_sites": 1,
+            "api.sites.active_alarms": 1,
+            "tools": 1,
+            "tool.get_permitted_sites": 1,
+            "model_answer": 1,
+            "model_followup": 1,
+            "guard": 1,
+            "persist": 1,
+            "reply": 1,
+            "total": 1
+          },
+          "model_calls": 2,
+          "tool_calls": 1,
+          "adapter_calls": 2,
+          "adapter_calls_by_operation": {
+            "sites.permitted_sites": 1,
+            "sites.active_alarms": 1
+          },
+          "model_request_bytes": [
+            5426,
+            5881
+          ],
+          "model_request_metrics": [
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 102,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 1
+            },
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 557,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 3
+            }
+          ],
+          "ui_command_count": 0
+        },
+        {
+          "ok": true,
+          "send_to_stream_end_ms": 135.5,
+          "correlation_id": "a33fb49f-589c-4764-bc87-8fef38e77629",
+          "browser_measures": [
+            {
+              "name": "alsense chat headers",
+              "duration_ms": 1.5,
+              "detail": {
+                "correlation_id": "a33fb49f-589c-4764-bc87-8fef38e77629"
+              }
+            },
+            {
+              "name": "alsense chat first_event",
+              "duration_ms": 48,
+              "detail": {
+                "correlation_id": "a33fb49f-589c-4764-bc87-8fef38e77629"
+              }
+            },
+            {
+              "name": "alsense chat reply",
+              "duration_ms": 133.39999999850988,
+              "detail": {
+                "correlation_id": "a33fb49f-589c-4764-bc87-8fef38e77629"
+              }
+            },
+            {
+              "name": "alsense chat rendered",
+              "duration_ms": 150,
+              "detail": {
+                "correlation_id": "a33fb49f-589c-4764-bc87-8fef38e77629"
+              }
+            },
+            {
+              "name": "alsense chat_render",
+              "duration_ms": 16.600000001490116,
+              "detail": {
+                "correlation_id": "a33fb49f-589c-4764-bc87-8fef38e77629"
+              }
+            }
+          ],
+          "resource_timing": [
+            {
+              "fetch_to_headers_ms": 1.1000000014901161,
+              "fetch_to_end_ms": 134.90000000223517,
+              "request_start_ms": 0.10000000149011612
+            }
+          ],
+          "backend_ms": {
+            "session": 0.36,
+            "history": 0.19,
+            "route": 0.87,
+            "first_model_response": 47.08,
+            "model_tool_selection": 45.09,
+            "first_event": 47.13,
+            "api_calls": 37.58,
+            "api.sites.permitted_sites": 18.77,
+            "api.sites.active_alarms": 18.81,
+            "tools": 37.92,
+            "tool.get_permitted_sites": 37.92,
+            "model_answer": 44.46,
+            "model_followup": 44.46,
+            "guard": 0.32,
+            "persist": 1.61,
+            "reply": 132.46,
+            "total": 132.76
+          },
+          "backend_count": {
+            "session": 1,
+            "history": 1,
+            "route": 1,
+            "first_model_response": 1,
+            "model_tool_selection": 1,
+            "first_event": 1,
+            "api_calls": 2,
+            "api.sites.permitted_sites": 1,
+            "api.sites.active_alarms": 1,
+            "tools": 1,
+            "tool.get_permitted_sites": 1,
+            "model_answer": 1,
+            "model_followup": 1,
+            "guard": 1,
+            "persist": 1,
+            "reply": 1,
+            "total": 1
+          },
+          "model_calls": 2,
+          "tool_calls": 1,
+          "adapter_calls": 2,
+          "adapter_calls_by_operation": {
+            "sites.permitted_sites": 1,
+            "sites.active_alarms": 1
+          },
+          "model_request_bytes": [
+            5426,
+            5881
+          ],
+          "model_request_metrics": [
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 102,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 1
+            },
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 557,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 3
+            }
+          ],
+          "ui_command_count": 0
+        },
+        {
+          "ok": true,
+          "send_to_stream_end_ms": 135.29999999701977,
+          "correlation_id": "691d901a-734a-4031-bf04-a8a4f6e9dd9e",
+          "browser_measures": [
+            {
+              "name": "alsense chat headers",
+              "duration_ms": 2.100000001490116,
+              "detail": {
+                "correlation_id": "691d901a-734a-4031-bf04-a8a4f6e9dd9e"
+              }
+            },
+            {
+              "name": "alsense chat first_event",
+              "duration_ms": 49.400000002235174,
+              "detail": {
+                "correlation_id": "691d901a-734a-4031-bf04-a8a4f6e9dd9e"
+              }
+            },
+            {
+              "name": "alsense chat reply",
+              "duration_ms": 131.90000000223517,
+              "detail": {
+                "correlation_id": "691d901a-734a-4031-bf04-a8a4f6e9dd9e"
+              }
+            },
+            {
+              "name": "alsense chat rendered",
+              "duration_ms": 146.10000000149012,
+              "detail": {
+                "correlation_id": "691d901a-734a-4031-bf04-a8a4f6e9dd9e"
+              }
+            },
+            {
+              "name": "alsense chat_render",
+              "duration_ms": 14.199999999254942,
+              "detail": {
+                "correlation_id": "691d901a-734a-4031-bf04-a8a4f6e9dd9e"
+              }
+            }
+          ],
+          "resource_timing": [
+            {
+              "fetch_to_headers_ms": 1.7000000029802322,
+              "fetch_to_end_ms": 134.70000000298023,
+              "request_start_ms": 0.30000000074505806
+            }
+          ],
+          "backend_ms": {
+            "session": 0.44,
+            "history": 0.51,
+            "route": 1.32,
+            "first_model_response": 48.27,
+            "model_tool_selection": 45.12,
+            "first_event": 48.32,
+            "api_calls": 33.06,
+            "api.sites.permitted_sites": 15.62,
+            "api.sites.active_alarms": 17.44,
+            "tools": 33.31,
+            "tool.get_permitted_sites": 33.31,
+            "model_answer": 43.93,
+            "model_followup": 43.93,
+            "guard": 0.24,
+            "persist": 3.83,
+            "reply": 130.53,
+            "total": 131.21
+          },
+          "backend_count": {
+            "session": 1,
+            "history": 1,
+            "route": 1,
+            "first_model_response": 1,
+            "model_tool_selection": 1,
+            "first_event": 1,
+            "api_calls": 2,
+            "api.sites.permitted_sites": 1,
+            "api.sites.active_alarms": 1,
+            "tools": 1,
+            "tool.get_permitted_sites": 1,
+            "model_answer": 1,
+            "model_followup": 1,
+            "guard": 1,
+            "persist": 1,
+            "reply": 1,
+            "total": 1
+          },
+          "model_calls": 2,
+          "tool_calls": 1,
+          "adapter_calls": 2,
+          "adapter_calls_by_operation": {
+            "sites.permitted_sites": 1,
+            "sites.active_alarms": 1
+          },
+          "model_request_bytes": [
+            5426,
+            5881
+          ],
+          "model_request_metrics": [
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 102,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 1
+            },
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 557,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 3
+            }
+          ],
+          "ui_command_count": 0
+        }
+      ]
+    },
+    "dashboard_docs": {
+      "median_send_to_stream_end_ms": 116.69999999925494,
+      "p95_nearest_rank_send_to_stream_end_ms": 118.90000000223517,
+      "samples": [
+        {
+          "ok": true,
+          "send_to_stream_end_ms": 117,
+          "correlation_id": "6af9972d-7826-4885-89f6-e2eb38740a77",
+          "browser_measures": [
+            {
+              "name": "alsense chat headers",
+              "duration_ms": 1.8999999985098839,
+              "detail": {
+                "correlation_id": "6af9972d-7826-4885-89f6-e2eb38740a77"
+              }
+            },
+            {
+              "name": "alsense chat first_event",
+              "duration_ms": 49.79999999701977,
+              "detail": {
+                "correlation_id": "6af9972d-7826-4885-89f6-e2eb38740a77"
+              }
+            },
+            {
+              "name": "alsense chat reply",
+              "duration_ms": 115.39999999850988,
+              "detail": {
+                "correlation_id": "6af9972d-7826-4885-89f6-e2eb38740a77"
+              }
+            },
+            {
+              "name": "alsense chat rendered",
+              "duration_ms": 121.79999999701977,
+              "detail": {
+                "correlation_id": "6af9972d-7826-4885-89f6-e2eb38740a77"
+              }
+            },
+            {
+              "name": "alsense chat_render",
+              "duration_ms": 6.399999998509884,
+              "detail": {
+                "correlation_id": "6af9972d-7826-4885-89f6-e2eb38740a77"
+              }
+            }
+          ],
+          "resource_timing": [
+            {
+              "fetch_to_headers_ms": 1.5,
+              "fetch_to_end_ms": 116.5,
+              "request_start_ms": 0.09999999776482582
+            }
+          ],
+          "backend_ms": {
+            "session": 0.45,
+            "history": 0.25,
+            "route": 1.48,
+            "first_model_response": 48.72,
+            "model_tool_selection": 45.15,
+            "first_event": 48.86,
+            "api_calls": 17.92,
+            "api.knowledge.search": 17.92,
+            "tools": 18.28,
+            "tool.search_docs": 18.28,
+            "model_answer": 45.11,
+            "model_followup": 45.11,
+            "guard": 0.24,
+            "persist": 1.09,
+            "reply": 114.56,
+            "total": 114.88
+          },
+          "backend_count": {
+            "session": 1,
+            "history": 1,
+            "route": 1,
+            "first_model_response": 1,
+            "model_tool_selection": 1,
+            "first_event": 1,
+            "api_calls": 1,
+            "api.knowledge.search": 1,
+            "tools": 1,
+            "tool.search_docs": 1,
+            "model_answer": 1,
+            "model_followup": 1,
+            "guard": 1,
+            "persist": 1,
+            "reply": 1,
+            "total": 1
+          },
+          "model_calls": 2,
+          "tool_calls": 1,
+          "adapter_calls": 1,
+          "adapter_calls_by_operation": {
+            "knowledge.search": 1
+          },
+          "model_request_bytes": [
+            5426,
+            6326
+          ],
+          "model_request_metrics": [
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 102,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 1
+            },
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 1002,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 3
+            }
+          ],
+          "ui_command_count": 0
+        },
+        {
+          "ok": true,
+          "send_to_stream_end_ms": 116.20000000298023,
+          "correlation_id": "d7957a19-c08a-4dc8-8c8d-7921b06d2311",
+          "browser_measures": [
+            {
+              "name": "alsense chat headers",
+              "duration_ms": 2.7999999970197678,
+              "detail": {
+                "correlation_id": "d7957a19-c08a-4dc8-8c8d-7921b06d2311"
+              }
+            },
+            {
+              "name": "alsense chat first_event",
+              "duration_ms": 48.19999999925494,
+              "detail": {
+                "correlation_id": "d7957a19-c08a-4dc8-8c8d-7921b06d2311"
+              }
+            },
+            {
+              "name": "alsense chat reply",
+              "duration_ms": 114.59999999776483,
+              "detail": {
+                "correlation_id": "d7957a19-c08a-4dc8-8c8d-7921b06d2311"
+              }
+            },
+            {
+              "name": "alsense chat rendered",
+              "duration_ms": 119.89999999850988,
+              "detail": {
+                "correlation_id": "d7957a19-c08a-4dc8-8c8d-7921b06d2311"
+              }
+            },
+            {
+              "name": "alsense chat_render",
+              "duration_ms": 5.300000000745058,
+              "detail": {
+                "correlation_id": "d7957a19-c08a-4dc8-8c8d-7921b06d2311"
+              }
+            }
+          ],
+          "resource_timing": [
+            {
+              "fetch_to_headers_ms": 1.3999999985098839,
+              "fetch_to_end_ms": 115.79999999701977,
+              "request_start_ms": 0.29999999701976776
+            }
+          ],
+          "backend_ms": {
+            "session": 0.39,
+            "history": 0.24,
+            "route": 0.97,
+            "first_model_response": 47.4,
+            "model_tool_selection": 45.09,
+            "first_event": 47.44,
+            "api_calls": 18.67,
+            "api.knowledge.search": 18.67,
+            "tools": 18.88,
+            "tool.search_docs": 18.88,
+            "model_answer": 45.12,
+            "model_followup": 45.12,
+            "guard": 0.25,
+            "persist": 1.45,
+            "reply": 113.87,
+            "total": 114.11
+          },
+          "backend_count": {
+            "session": 1,
+            "history": 1,
+            "route": 1,
+            "first_model_response": 1,
+            "model_tool_selection": 1,
+            "first_event": 1,
+            "api_calls": 1,
+            "api.knowledge.search": 1,
+            "tools": 1,
+            "tool.search_docs": 1,
+            "model_answer": 1,
+            "model_followup": 1,
+            "guard": 1,
+            "persist": 1,
+            "reply": 1,
+            "total": 1
+          },
+          "model_calls": 2,
+          "tool_calls": 1,
+          "adapter_calls": 1,
+          "adapter_calls_by_operation": {
+            "knowledge.search": 1
+          },
+          "model_request_bytes": [
+            5426,
+            6326
+          ],
+          "model_request_metrics": [
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 102,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 1
+            },
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 1002,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 3
+            }
+          ],
+          "ui_command_count": 0
+        },
+        {
+          "ok": true,
+          "send_to_stream_end_ms": 116.69999999925494,
+          "correlation_id": "0bffe2eb-2c8c-43bb-8dd3-85cc90dec3c9",
+          "browser_measures": [
+            {
+              "name": "alsense chat headers",
+              "duration_ms": 1.3999999985098839,
+              "detail": {
+                "correlation_id": "0bffe2eb-2c8c-43bb-8dd3-85cc90dec3c9"
+              }
+            },
+            {
+              "name": "alsense chat first_event",
+              "duration_ms": 48.5,
+              "detail": {
+                "correlation_id": "0bffe2eb-2c8c-43bb-8dd3-85cc90dec3c9"
+              }
+            },
+            {
+              "name": "alsense chat reply",
+              "duration_ms": 114.89999999850988,
+              "detail": {
+                "correlation_id": "0bffe2eb-2c8c-43bb-8dd3-85cc90dec3c9"
+              }
+            },
+            {
+              "name": "alsense chat rendered",
+              "duration_ms": 123.30000000074506,
+              "detail": {
+                "correlation_id": "0bffe2eb-2c8c-43bb-8dd3-85cc90dec3c9"
+              }
+            },
+            {
+              "name": "alsense chat_render",
+              "duration_ms": 8.400000002235174,
+              "detail": {
+                "correlation_id": "0bffe2eb-2c8c-43bb-8dd3-85cc90dec3c9"
+              }
+            }
+          ],
+          "resource_timing": [
+            {
+              "fetch_to_headers_ms": 1.1000000014901161,
+              "fetch_to_end_ms": 116.19999999925494,
+              "request_start_ms": 0.10000000149011612
+            }
+          ],
+          "backend_ms": {
+            "session": 0.36,
+            "history": 0.3,
+            "route": 1.22,
+            "first_model_response": 47.57,
+            "model_tool_selection": 45.11,
+            "first_event": 47.6,
+            "api_calls": 18.34,
+            "api.knowledge.search": 18.34,
+            "tools": 18.6,
+            "tool.search_docs": 18.6,
+            "model_answer": 45.12,
+            "model_followup": 45.12,
+            "guard": 0.31,
+            "persist": 1.51,
+            "reply": 114.01,
+            "total": 114.32
+          },
+          "backend_count": {
+            "session": 1,
+            "history": 1,
+            "route": 1,
+            "first_model_response": 1,
+            "model_tool_selection": 1,
+            "first_event": 1,
+            "api_calls": 1,
+            "api.knowledge.search": 1,
+            "tools": 1,
+            "tool.search_docs": 1,
+            "model_answer": 1,
+            "model_followup": 1,
+            "guard": 1,
+            "persist": 1,
+            "reply": 1,
+            "total": 1
+          },
+          "model_calls": 2,
+          "tool_calls": 1,
+          "adapter_calls": 1,
+          "adapter_calls_by_operation": {
+            "knowledge.search": 1
+          },
+          "model_request_bytes": [
+            5426,
+            6326
+          ],
+          "model_request_metrics": [
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 102,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 1
+            },
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 1002,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 3
+            }
+          ],
+          "ui_command_count": 0
+        },
+        {
+          "ok": true,
+          "send_to_stream_end_ms": 112.20000000298023,
+          "correlation_id": "b3d7d4b9-ed2b-4cb3-bd85-ca4ddc93a63d",
+          "browser_measures": [
+            {
+              "name": "alsense chat headers",
+              "duration_ms": 1.8999999985098839,
+              "detail": {
+                "correlation_id": "b3d7d4b9-ed2b-4cb3-bd85-ca4ddc93a63d"
+              }
+            },
+            {
+              "name": "alsense chat first_event",
+              "duration_ms": 47,
+              "detail": {
+                "correlation_id": "b3d7d4b9-ed2b-4cb3-bd85-ca4ddc93a63d"
+              }
+            },
+            {
+              "name": "alsense chat reply",
+              "duration_ms": 109.60000000149012,
+              "detail": {
+                "correlation_id": "b3d7d4b9-ed2b-4cb3-bd85-ca4ddc93a63d"
+              }
+            },
+            {
+              "name": "alsense chat rendered",
+              "duration_ms": 120.60000000149012,
+              "detail": {
+                "correlation_id": "b3d7d4b9-ed2b-4cb3-bd85-ca4ddc93a63d"
+              }
+            },
+            {
+              "name": "alsense chat_render",
+              "duration_ms": 11,
+              "detail": {
+                "correlation_id": "b3d7d4b9-ed2b-4cb3-bd85-ca4ddc93a63d"
+              }
+            }
+          ],
+          "resource_timing": [
+            {
+              "fetch_to_headers_ms": 1.699999999254942,
+              "fetch_to_end_ms": 111.80000000074506,
+              "request_start_ms": 0.30000000074505806
+            }
+          ],
+          "backend_ms": {
+            "session": 0.5,
+            "history": 0.23,
+            "route": 1.1,
+            "first_model_response": 46.18,
+            "model_tool_selection": 43.6,
+            "first_event": 46.24,
+            "api_calls": 16.27,
+            "api.knowledge.search": 16.27,
+            "tools": 16.55,
+            "tool.search_docs": 16.55,
+            "model_answer": 42.84,
+            "model_followup": 42.84,
+            "guard": 0.36,
+            "persist": 1.79,
+            "reply": 108.73,
+            "total": 109.06
+          },
+          "backend_count": {
+            "session": 1,
+            "history": 1,
+            "route": 1,
+            "first_model_response": 1,
+            "model_tool_selection": 1,
+            "first_event": 1,
+            "api_calls": 1,
+            "api.knowledge.search": 1,
+            "tools": 1,
+            "tool.search_docs": 1,
+            "model_answer": 1,
+            "model_followup": 1,
+            "guard": 1,
+            "persist": 1,
+            "reply": 1,
+            "total": 1
+          },
+          "model_calls": 2,
+          "tool_calls": 1,
+          "adapter_calls": 1,
+          "adapter_calls_by_operation": {
+            "knowledge.search": 1
+          },
+          "model_request_bytes": [
+            5426,
+            6326
+          ],
+          "model_request_metrics": [
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 102,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 1
+            },
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 1002,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 3
+            }
+          ],
+          "ui_command_count": 0
+        },
+        {
+          "ok": true,
+          "send_to_stream_end_ms": 118.90000000223517,
+          "correlation_id": "cd6d1939-e881-4a30-b5b7-535d7e03a8a6",
+          "browser_measures": [
+            {
+              "name": "alsense chat headers",
+              "duration_ms": 1.8999999985098839,
+              "detail": {
+                "correlation_id": "cd6d1939-e881-4a30-b5b7-535d7e03a8a6"
+              }
+            },
+            {
+              "name": "alsense chat first_event",
+              "duration_ms": 49.19999999925494,
+              "detail": {
+                "correlation_id": "cd6d1939-e881-4a30-b5b7-535d7e03a8a6"
+              }
+            },
+            {
+              "name": "alsense chat reply",
+              "duration_ms": 116.19999999925494,
+              "detail": {
+                "correlation_id": "cd6d1939-e881-4a30-b5b7-535d7e03a8a6"
+              }
+            },
+            {
+              "name": "alsense chat rendered",
+              "duration_ms": 121.80000000074506,
+              "detail": {
+                "correlation_id": "cd6d1939-e881-4a30-b5b7-535d7e03a8a6"
+              }
+            },
+            {
+              "name": "alsense chat_render",
+              "duration_ms": 5.5,
+              "detail": {
+                "correlation_id": "cd6d1939-e881-4a30-b5b7-535d7e03a8a6"
+              }
+            }
+          ],
+          "resource_timing": [
+            {
+              "fetch_to_headers_ms": 1.699999999254942,
+              "fetch_to_end_ms": 118.19999999925494,
+              "request_start_ms": 0.19999999925494194
+            }
+          ],
+          "backend_ms": {
+            "session": 0.71,
+            "history": 0.28,
+            "route": 1.45,
+            "first_model_response": 48.25,
+            "model_tool_selection": 45.12,
+            "first_event": 48.31,
+            "api_calls": 18.71,
+            "api.knowledge.search": 18.71,
+            "tools": 18.99,
+            "tool.search_docs": 18.99,
+            "model_answer": 44.55,
+            "model_followup": 44.55,
+            "guard": 0.49,
+            "persist": 2.01,
+            "reply": 115.26,
+            "total": 115.69
+          },
+          "backend_count": {
+            "session": 1,
+            "history": 1,
+            "route": 1,
+            "first_model_response": 1,
+            "model_tool_selection": 1,
+            "first_event": 1,
+            "api_calls": 1,
+            "api.knowledge.search": 1,
+            "tools": 1,
+            "tool.search_docs": 1,
+            "model_answer": 1,
+            "model_followup": 1,
+            "guard": 1,
+            "persist": 1,
+            "reply": 1,
+            "total": 1
+          },
+          "model_calls": 2,
+          "tool_calls": 1,
+          "adapter_calls": 1,
+          "adapter_calls_by_operation": {
+            "knowledge.search": 1
+          },
+          "model_request_bytes": [
+            5426,
+            6326
+          ],
+          "model_request_metrics": [
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 102,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 1
+            },
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 1002,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 3
+            }
+          ],
+          "ui_command_count": 0
+        }
+      ]
+    },
+    "dashboard_repair_direct": {
+      "median_send_to_stream_end_ms": 98.5,
+      "p95_nearest_rank_send_to_stream_end_ms": 104.69999999925494,
+      "samples": [
+        {
+          "ok": true,
+          "send_to_stream_end_ms": 97.5,
+          "correlation_id": "135291b3-4d7d-4fe7-af05-c2be2a094fb1",
+          "browser_measures": [
+            {
+              "name": "alsense chat headers",
+              "duration_ms": 1.4000000022351742,
+              "detail": {
+                "correlation_id": "135291b3-4d7d-4fe7-af05-c2be2a094fb1"
+              }
+            },
+            {
+              "name": "alsense chat first_event",
+              "duration_ms": 95.5,
+              "detail": {
+                "correlation_id": "135291b3-4d7d-4fe7-af05-c2be2a094fb1"
+              }
+            },
+            {
+              "name": "alsense chat reply",
+              "duration_ms": 95.5,
+              "detail": {
+                "correlation_id": "135291b3-4d7d-4fe7-af05-c2be2a094fb1"
+              }
+            },
+            {
+              "name": "alsense chat rendered",
+              "duration_ms": 109.10000000149012,
+              "detail": {
+                "correlation_id": "135291b3-4d7d-4fe7-af05-c2be2a094fb1"
+              }
+            },
+            {
+              "name": "alsense chat_render",
+              "duration_ms": 13.600000001490116,
+              "detail": {
+                "correlation_id": "135291b3-4d7d-4fe7-af05-c2be2a094fb1"
+              }
+            }
+          ],
+          "resource_timing": [
+            {
+              "fetch_to_headers_ms": 1.199999999254942,
+              "fetch_to_end_ms": 97.10000000149012,
+              "request_start_ms": 0.19999999925494194
+            }
+          ],
+          "backend_ms": {
+            "session": 0.38,
+            "history": 0.19,
+            "route": 0.89,
+            "first_model_response": 45.89,
+            "model_answer": 86.88,
+            "guard": 0.67,
+            "model_followup": 42.98,
+            "persist": 2.6,
+            "first_event": 94.65,
+            "reply": 94.65,
+            "total": 95.02
+          },
+          "backend_count": {
+            "session": 1,
+            "history": 1,
+            "route": 1,
+            "first_model_response": 1,
+            "model_answer": 2,
+            "guard": 2,
+            "model_followup": 1,
+            "persist": 1,
+            "first_event": 1,
+            "reply": 1,
+            "total": 1
+          },
+          "model_calls": 2,
+          "tool_calls": 0,
+          "adapter_calls": 0,
+          "adapter_calls_by_operation": {},
+          "model_request_bytes": [
+            5426,
+            5850
+          ],
+          "model_request_metrics": [
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 102,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 1
+            },
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 526,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 2
+            }
+          ],
+          "ui_command_count": 0
+        },
+        {
+          "ok": true,
+          "send_to_stream_end_ms": 95.89999999850988,
+          "correlation_id": "4f7c961a-e463-4894-983a-e8d86b5c76a2",
+          "browser_measures": [
+            {
+              "name": "alsense chat headers",
+              "duration_ms": 1.7999999970197678,
+              "detail": {
+                "correlation_id": "4f7c961a-e463-4894-983a-e8d86b5c76a2"
+              }
+            },
+            {
+              "name": "alsense chat first_event",
+              "duration_ms": 94.19999999925494,
+              "detail": {
+                "correlation_id": "4f7c961a-e463-4894-983a-e8d86b5c76a2"
+              }
+            },
+            {
+              "name": "alsense chat reply",
+              "duration_ms": 94.19999999925494,
+              "detail": {
+                "correlation_id": "4f7c961a-e463-4894-983a-e8d86b5c76a2"
+              }
+            },
+            {
+              "name": "alsense chat rendered",
+              "duration_ms": 107.59999999776483,
+              "detail": {
+                "correlation_id": "4f7c961a-e463-4894-983a-e8d86b5c76a2"
+              }
+            },
+            {
+              "name": "alsense chat_render",
+              "duration_ms": 13.399999998509884,
+              "detail": {
+                "correlation_id": "4f7c961a-e463-4894-983a-e8d86b5c76a2"
+              }
+            }
+          ],
+          "resource_timing": [
+            {
+              "fetch_to_headers_ms": 1.5,
+              "fetch_to_end_ms": 95.40000000223517,
+              "request_start_ms": 0.19999999925494194
+            }
+          ],
+          "backend_ms": {
+            "session": 0.43,
+            "history": 0.25,
+            "route": 1.13,
+            "first_model_response": 47.27,
+            "model_answer": 87.73,
+            "guard": 0.46,
+            "model_followup": 42.96,
+            "persist": 1.09,
+            "first_event": 93.38,
+            "reply": 93.39,
+            "total": 93.65
+          },
+          "backend_count": {
+            "session": 1,
+            "history": 1,
+            "route": 1,
+            "first_model_response": 1,
+            "model_answer": 2,
+            "guard": 2,
+            "model_followup": 1,
+            "persist": 1,
+            "first_event": 1,
+            "reply": 1,
+            "total": 1
+          },
+          "model_calls": 2,
+          "tool_calls": 0,
+          "adapter_calls": 0,
+          "adapter_calls_by_operation": {},
+          "model_request_bytes": [
+            5426,
+            5850
+          ],
+          "model_request_metrics": [
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 102,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 1
+            },
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 526,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 2
+            }
+          ],
+          "ui_command_count": 0
+        },
+        {
+          "ok": true,
+          "send_to_stream_end_ms": 98.5,
+          "correlation_id": "dfe0e48c-7661-4c17-9414-ef4fd84503bd",
+          "browser_measures": [
+            {
+              "name": "alsense chat headers",
+              "duration_ms": 1.6000000014901161,
+              "detail": {
+                "correlation_id": "dfe0e48c-7661-4c17-9414-ef4fd84503bd"
+              }
+            },
+            {
+              "name": "alsense chat first_event",
+              "duration_ms": 96.10000000149012,
+              "detail": {
+                "correlation_id": "dfe0e48c-7661-4c17-9414-ef4fd84503bd"
+              }
+            },
+            {
+              "name": "alsense chat reply",
+              "duration_ms": 96.10000000149012,
+              "detail": {
+                "correlation_id": "dfe0e48c-7661-4c17-9414-ef4fd84503bd"
+              }
+            },
+            {
+              "name": "alsense chat rendered",
+              "duration_ms": 108.30000000074506,
+              "detail": {
+                "correlation_id": "dfe0e48c-7661-4c17-9414-ef4fd84503bd"
+              }
+            },
+            {
+              "name": "alsense chat_render",
+              "duration_ms": 12.199999999254942,
+              "detail": {
+                "correlation_id": "dfe0e48c-7661-4c17-9414-ef4fd84503bd"
+              }
+            }
+          ],
+          "resource_timing": [
+            {
+              "fetch_to_headers_ms": 1.3999999985098839,
+              "fetch_to_end_ms": 97.89999999850988,
+              "request_start_ms": 0.19999999925494194
+            }
+          ],
+          "backend_ms": {
+            "session": 0.43,
+            "history": 0.22,
+            "route": 1.02,
+            "first_model_response": 47.39,
+            "model_answer": 89.2,
+            "guard": 0.56,
+            "model_followup": 44.08,
+            "persist": 1.4,
+            "first_event": 95.25,
+            "reply": 95.25,
+            "total": 95.63
+          },
+          "backend_count": {
+            "session": 1,
+            "history": 1,
+            "route": 1,
+            "first_model_response": 1,
+            "model_answer": 2,
+            "guard": 2,
+            "model_followup": 1,
+            "persist": 1,
+            "first_event": 1,
+            "reply": 1,
+            "total": 1
+          },
+          "model_calls": 2,
+          "tool_calls": 0,
+          "adapter_calls": 0,
+          "adapter_calls_by_operation": {},
+          "model_request_bytes": [
+            5426,
+            5850
+          ],
+          "model_request_metrics": [
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 102,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 1
+            },
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 526,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 2
+            }
+          ],
+          "ui_command_count": 0
+        },
+        {
+          "ok": true,
+          "send_to_stream_end_ms": 99,
+          "correlation_id": "909ff4b4-b51f-4178-bf0a-18d189f84c32",
+          "browser_measures": [
+            {
+              "name": "alsense chat headers",
+              "duration_ms": 1.800000000745058,
+              "detail": {
+                "correlation_id": "909ff4b4-b51f-4178-bf0a-18d189f84c32"
+              }
+            },
+            {
+              "name": "alsense chat first_event",
+              "duration_ms": 96.89999999850988,
+              "detail": {
+                "correlation_id": "909ff4b4-b51f-4178-bf0a-18d189f84c32"
+              }
+            },
+            {
+              "name": "alsense chat reply",
+              "duration_ms": 97,
+              "detail": {
+                "correlation_id": "909ff4b4-b51f-4178-bf0a-18d189f84c32"
+              }
+            },
+            {
+              "name": "alsense chat rendered",
+              "duration_ms": 105.59999999776483,
+              "detail": {
+                "correlation_id": "909ff4b4-b51f-4178-bf0a-18d189f84c32"
+              }
+            },
+            {
+              "name": "alsense chat_render",
+              "duration_ms": 8.599999997764826,
+              "detail": {
+                "correlation_id": "909ff4b4-b51f-4178-bf0a-18d189f84c32"
+              }
+            }
+          ],
+          "resource_timing": [
+            {
+              "fetch_to_headers_ms": 1.5,
+              "fetch_to_end_ms": 98.40000000223517,
+              "request_start_ms": 0.20000000298023224
+            }
+          ],
+          "backend_ms": {
+            "session": 0.5,
+            "history": 0.29,
+            "route": 1.25,
+            "first_model_response": 45.6,
+            "model_answer": 87.19,
+            "guard": 0.83,
+            "model_followup": 44.34,
+            "persist": 1.75,
+            "first_event": 95.94,
+            "reply": 95.94,
+            "total": 96.32
+          },
+          "backend_count": {
+            "session": 1,
+            "history": 1,
+            "route": 1,
+            "first_model_response": 1,
+            "model_answer": 2,
+            "guard": 2,
+            "model_followup": 1,
+            "persist": 1,
+            "first_event": 1,
+            "reply": 1,
+            "total": 1
+          },
+          "model_calls": 2,
+          "tool_calls": 0,
+          "adapter_calls": 0,
+          "adapter_calls_by_operation": {},
+          "model_request_bytes": [
+            5426,
+            5850
+          ],
+          "model_request_metrics": [
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 102,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 1
+            },
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 526,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 2
+            }
+          ],
+          "ui_command_count": 0
+        },
+        {
+          "ok": true,
+          "send_to_stream_end_ms": 104.69999999925494,
+          "correlation_id": "87f468a4-47c7-4249-8be0-f1caf1209673",
+          "browser_measures": [
+            {
+              "name": "alsense chat headers",
+              "duration_ms": 3.399999998509884,
+              "detail": {
+                "correlation_id": "87f468a4-47c7-4249-8be0-f1caf1209673"
+              }
+            },
+            {
+              "name": "alsense chat first_event",
+              "duration_ms": 102.69999999925494,
+              "detail": {
+                "correlation_id": "87f468a4-47c7-4249-8be0-f1caf1209673"
+              }
+            },
+            {
+              "name": "alsense chat reply",
+              "duration_ms": 102.79999999701977,
+              "detail": {
+                "correlation_id": "87f468a4-47c7-4249-8be0-f1caf1209673"
+              }
+            },
+            {
+              "name": "alsense chat rendered",
+              "duration_ms": 115.59999999776483,
+              "detail": {
+                "correlation_id": "87f468a4-47c7-4249-8be0-f1caf1209673"
+              }
+            },
+            {
+              "name": "alsense chat_render",
+              "duration_ms": 12.800000000745058,
+              "detail": {
+                "correlation_id": "87f468a4-47c7-4249-8be0-f1caf1209673"
+              }
+            }
+          ],
+          "resource_timing": [
+            {
+              "fetch_to_headers_ms": 3,
+              "fetch_to_end_ms": 104.19999999925494,
+              "request_start_ms": 0.4000000022351742
+            }
+          ],
+          "backend_ms": {
+            "session": 1.57,
+            "history": 0.67,
+            "route": 1.7,
+            "first_model_response": 49.27,
+            "model_answer": 88.77,
+            "guard": 0.84,
+            "model_followup": 44.48,
+            "persist": 1.76,
+            "first_event": 101.68,
+            "reply": 101.68,
+            "total": 102.03
+          },
+          "backend_count": {
+            "session": 1,
+            "history": 1,
+            "route": 1,
+            "first_model_response": 1,
+            "model_answer": 2,
+            "guard": 2,
+            "model_followup": 1,
+            "persist": 1,
+            "first_event": 1,
+            "reply": 1,
+            "total": 1
+          },
+          "model_calls": 2,
+          "tool_calls": 0,
+          "adapter_calls": 0,
+          "adapter_calls_by_operation": {},
+          "model_request_bytes": [
+            5426,
+            5850
+          ],
+          "model_request_metrics": [
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 102,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 1
+            },
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 526,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 2
+            }
+          ],
+          "ui_command_count": 0
+        }
+      ]
+    },
+    "dashboard_repair_after_tool": {
+      "median_send_to_stream_end_ms": 167.80000000074506,
+      "p95_nearest_rank_send_to_stream_end_ms": 172.69999999925494,
+      "samples": [
+        {
+          "ok": true,
+          "send_to_stream_end_ms": 170.19999999925494,
+          "correlation_id": "6cb36820-b701-4b23-bc97-d77e61550d1f",
+          "browser_measures": [
+            {
+              "name": "alsense chat headers",
+              "duration_ms": 3,
+              "detail": {
+                "correlation_id": "6cb36820-b701-4b23-bc97-d77e61550d1f"
+              }
+            },
+            {
+              "name": "alsense chat first_event",
+              "duration_ms": 50.30000000074506,
+              "detail": {
+                "correlation_id": "6cb36820-b701-4b23-bc97-d77e61550d1f"
+              }
+            },
+            {
+              "name": "alsense chat reply",
+              "duration_ms": 167,
+              "detail": {
+                "correlation_id": "6cb36820-b701-4b23-bc97-d77e61550d1f"
+              }
+            },
+            {
+              "name": "alsense chat rendered",
+              "duration_ms": 179.19999999925494,
+              "detail": {
+                "correlation_id": "6cb36820-b701-4b23-bc97-d77e61550d1f"
+              }
+            },
+            {
+              "name": "alsense chat_render",
+              "duration_ms": 12.099999997764826,
+              "detail": {
+                "correlation_id": "6cb36820-b701-4b23-bc97-d77e61550d1f"
+              }
+            }
+          ],
+          "resource_timing": [
+            {
+              "fetch_to_headers_ms": 2.5,
+              "fetch_to_end_ms": 169.09999999776483,
+              "request_start_ms": 0.5
+            }
+          ],
+          "backend_ms": {
+            "session": 0.76,
+            "history": 0.43,
+            "route": 1.55,
+            "first_model_response": 48.88,
+            "model_tool_selection": 45.12,
+            "first_event": 48.93,
+            "api_calls": 18.11,
+            "api.knowledge.search": 18.11,
+            "tools": 18.42,
+            "tool.search_docs": 18.42,
+            "model_answer": 90.31,
+            "model_followup": 90.31,
+            "guard": 0.87,
+            "persist": 2.19,
+            "reply": 165.41,
+            "total": 165.94
+          },
+          "backend_count": {
+            "session": 1,
+            "history": 1,
+            "route": 1,
+            "first_model_response": 1,
+            "model_tool_selection": 1,
+            "first_event": 1,
+            "api_calls": 1,
+            "api.knowledge.search": 1,
+            "tools": 1,
+            "tool.search_docs": 1,
+            "model_answer": 2,
+            "model_followup": 2,
+            "guard": 2,
+            "persist": 1,
+            "reply": 1,
+            "total": 1
+          },
+          "model_calls": 3,
+          "tool_calls": 1,
+          "adapter_calls": 1,
+          "adapter_calls_by_operation": {
+            "knowledge.search": 1
+          },
+          "model_request_bytes": [
+            5426,
+            6326,
+            6750
+          ],
+          "model_request_metrics": [
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 102,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 1
+            },
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 1002,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 3
+            },
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 1426,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 4
+            }
+          ],
+          "ui_command_count": 0
+        },
+        {
+          "ok": true,
+          "send_to_stream_end_ms": 172.69999999925494,
+          "correlation_id": "ee4e5b9f-cdf7-4599-a83b-41aed5d4a358",
+          "browser_measures": [
+            {
+              "name": "alsense chat headers",
+              "duration_ms": 2.400000002235174,
+              "detail": {
+                "correlation_id": "ee4e5b9f-cdf7-4599-a83b-41aed5d4a358"
+              }
+            },
+            {
+              "name": "alsense chat first_event",
+              "duration_ms": 48.70000000298023,
+              "detail": {
+                "correlation_id": "ee4e5b9f-cdf7-4599-a83b-41aed5d4a358"
+              }
+            },
+            {
+              "name": "alsense chat reply",
+              "duration_ms": 169.10000000149012,
+              "detail": {
+                "correlation_id": "ee4e5b9f-cdf7-4599-a83b-41aed5d4a358"
+              }
+            },
+            {
+              "name": "alsense chat rendered",
+              "duration_ms": 184.20000000298023,
+              "detail": {
+                "correlation_id": "ee4e5b9f-cdf7-4599-a83b-41aed5d4a358"
+              }
+            },
+            {
+              "name": "alsense chat_render",
+              "duration_ms": 15.199999999254942,
+              "detail": {
+                "correlation_id": "ee4e5b9f-cdf7-4599-a83b-41aed5d4a358"
+              }
+            }
+          ],
+          "resource_timing": [
+            {
+              "fetch_to_headers_ms": 2,
+              "fetch_to_end_ms": 171.89999999850988,
+              "request_start_ms": 0.30000000074505806
+            }
+          ],
+          "backend_ms": {
+            "session": 0.55,
+            "history": 0.28,
+            "route": 1.39,
+            "first_model_response": 47.57,
+            "model_tool_selection": 44.4,
+            "first_event": 47.63,
+            "api_calls": 18.78,
+            "api.knowledge.search": 18.78,
+            "tools": 19.15,
+            "tool.search_docs": 19.15,
+            "model_answer": 90.55,
+            "model_followup": 90.55,
+            "guard": 1.34,
+            "persist": 3.14,
+            "reply": 167.52,
+            "total": 168.23
+          },
+          "backend_count": {
+            "session": 1,
+            "history": 1,
+            "route": 1,
+            "first_model_response": 1,
+            "model_tool_selection": 1,
+            "first_event": 1,
+            "api_calls": 1,
+            "api.knowledge.search": 1,
+            "tools": 1,
+            "tool.search_docs": 1,
+            "model_answer": 2,
+            "model_followup": 2,
+            "guard": 2,
+            "persist": 1,
+            "reply": 1,
+            "total": 1
+          },
+          "model_calls": 3,
+          "tool_calls": 1,
+          "adapter_calls": 1,
+          "adapter_calls_by_operation": {
+            "knowledge.search": 1
+          },
+          "model_request_bytes": [
+            5426,
+            6326,
+            6750
+          ],
+          "model_request_metrics": [
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 102,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 1
+            },
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 1002,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 3
+            },
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 1426,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 4
+            }
+          ],
+          "ui_command_count": 0
+        },
+        {
+          "ok": true,
+          "send_to_stream_end_ms": 167.80000000074506,
+          "correlation_id": "0404c676-e8d5-4bbb-9620-daec7056ad3c",
+          "browser_measures": [
+            {
+              "name": "alsense chat headers",
+              "duration_ms": 2.300000000745058,
+              "detail": {
+                "correlation_id": "0404c676-e8d5-4bbb-9620-daec7056ad3c"
+              }
+            },
+            {
+              "name": "alsense chat first_event",
+              "duration_ms": 46.19999999925494,
+              "detail": {
+                "correlation_id": "0404c676-e8d5-4bbb-9620-daec7056ad3c"
+              }
+            },
+            {
+              "name": "alsense chat reply",
+              "duration_ms": 163.59999999776483,
+              "detail": {
+                "correlation_id": "0404c676-e8d5-4bbb-9620-daec7056ad3c"
+              }
+            },
+            {
+              "name": "alsense chat rendered",
+              "duration_ms": 173.30000000074506,
+              "detail": {
+                "correlation_id": "0404c676-e8d5-4bbb-9620-daec7056ad3c"
+              }
+            },
+            {
+              "name": "alsense chat_render",
+              "duration_ms": 9.700000002980232,
+              "detail": {
+                "correlation_id": "0404c676-e8d5-4bbb-9620-daec7056ad3c"
+              }
+            }
+          ],
+          "resource_timing": [
+            {
+              "fetch_to_headers_ms": 2,
+              "fetch_to_end_ms": 166.90000000223517,
+              "request_start_ms": 0.30000000074505806
+            }
+          ],
+          "backend_ms": {
+            "session": 0.57,
+            "history": 0.31,
+            "route": 1.42,
+            "first_model_response": 44.94,
+            "model_tool_selection": 41.69,
+            "first_event": 45.0,
+            "api_calls": 17.95,
+            "api.knowledge.search": 17.95,
+            "tools": 18.29,
+            "tool.search_docs": 18.29,
+            "model_answer": 88.93,
+            "model_followup": 88.93,
+            "guard": 1.62,
+            "persist": 3.28,
+            "reply": 162.07,
+            "total": 162.69
+          },
+          "backend_count": {
+            "session": 1,
+            "history": 1,
+            "route": 1,
+            "first_model_response": 1,
+            "model_tool_selection": 1,
+            "first_event": 1,
+            "api_calls": 1,
+            "api.knowledge.search": 1,
+            "tools": 1,
+            "tool.search_docs": 1,
+            "model_answer": 2,
+            "model_followup": 2,
+            "guard": 2,
+            "persist": 1,
+            "reply": 1,
+            "total": 1
+          },
+          "model_calls": 3,
+          "tool_calls": 1,
+          "adapter_calls": 1,
+          "adapter_calls_by_operation": {
+            "knowledge.search": 1
+          },
+          "model_request_bytes": [
+            5426,
+            6326,
+            6750
+          ],
+          "model_request_metrics": [
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 102,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 1
+            },
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 1002,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 3
+            },
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 1426,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 4
+            }
+          ],
+          "ui_command_count": 0
+        },
+        {
+          "ok": true,
+          "send_to_stream_end_ms": 162.69999999925494,
+          "correlation_id": "0ebf07ca-1fa5-454c-ae55-534c41ab2cc2",
+          "browser_measures": [
+            {
+              "name": "alsense chat headers",
+              "duration_ms": 2.100000001490116,
+              "detail": {
+                "correlation_id": "0ebf07ca-1fa5-454c-ae55-534c41ab2cc2"
+              }
+            },
+            {
+              "name": "alsense chat first_event",
+              "duration_ms": 47.399999998509884,
+              "detail": {
+                "correlation_id": "0ebf07ca-1fa5-454c-ae55-534c41ab2cc2"
+              }
+            },
+            {
+              "name": "alsense chat reply",
+              "duration_ms": 158.80000000074506,
+              "detail": {
+                "correlation_id": "0ebf07ca-1fa5-454c-ae55-534c41ab2cc2"
+              }
+            },
+            {
+              "name": "alsense chat rendered",
+              "duration_ms": 161.60000000149012,
+              "detail": {
+                "correlation_id": "0ebf07ca-1fa5-454c-ae55-534c41ab2cc2"
+              }
+            },
+            {
+              "name": "alsense chat_render",
+              "duration_ms": 2.800000000745058,
+              "detail": {
+                "correlation_id": "0ebf07ca-1fa5-454c-ae55-534c41ab2cc2"
+              }
+            }
+          ],
+          "resource_timing": [
+            {
+              "fetch_to_headers_ms": 1.8999999985098839,
+              "fetch_to_end_ms": 161.30000000074506,
+              "request_start_ms": 0.30000000074505806
+            }
+          ],
+          "backend_ms": {
+            "session": 0.51,
+            "history": 0.3,
+            "route": 1.56,
+            "first_model_response": 46.28,
+            "model_tool_selection": 43.01,
+            "first_event": 46.34,
+            "api_calls": 16.96,
+            "api.knowledge.search": 16.96,
+            "tools": 17.32,
+            "tool.search_docs": 17.32,
+            "model_answer": 86.9,
+            "model_followup": 86.9,
+            "guard": 0.9,
+            "persist": 1.91,
+            "reply": 157.49,
+            "total": 157.99
+          },
+          "backend_count": {
+            "session": 1,
+            "history": 1,
+            "route": 1,
+            "first_model_response": 1,
+            "model_tool_selection": 1,
+            "first_event": 1,
+            "api_calls": 1,
+            "api.knowledge.search": 1,
+            "tools": 1,
+            "tool.search_docs": 1,
+            "model_answer": 2,
+            "model_followup": 2,
+            "guard": 2,
+            "persist": 1,
+            "reply": 1,
+            "total": 1
+          },
+          "model_calls": 3,
+          "tool_calls": 1,
+          "adapter_calls": 1,
+          "adapter_calls_by_operation": {
+            "knowledge.search": 1
+          },
+          "model_request_bytes": [
+            5426,
+            6326,
+            6750
+          ],
+          "model_request_metrics": [
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 102,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 1
+            },
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 1002,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 3
+            },
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 1426,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 4
+            }
+          ],
+          "ui_command_count": 0
+        },
+        {
+          "ok": true,
+          "send_to_stream_end_ms": 164.80000000074506,
+          "correlation_id": "b772f7f4-fb38-490c-99f8-60f3a6f7d153",
+          "browser_measures": [
+            {
+              "name": "alsense chat headers",
+              "duration_ms": 3,
+              "detail": {
+                "correlation_id": "b772f7f4-fb38-490c-99f8-60f3a6f7d153"
+              }
+            },
+            {
+              "name": "alsense chat first_event",
+              "duration_ms": 46.399999998509884,
+              "detail": {
+                "correlation_id": "b772f7f4-fb38-490c-99f8-60f3a6f7d153"
+              }
+            },
+            {
+              "name": "alsense chat reply",
+              "duration_ms": 162.29999999701977,
+              "detail": {
+                "correlation_id": "b772f7f4-fb38-490c-99f8-60f3a6f7d153"
+              }
+            },
+            {
+              "name": "alsense chat rendered",
+              "duration_ms": 176.19999999925494,
+              "detail": {
+                "correlation_id": "b772f7f4-fb38-490c-99f8-60f3a6f7d153"
+              }
+            },
+            {
+              "name": "alsense chat_render",
+              "duration_ms": 14,
+              "detail": {
+                "correlation_id": "b772f7f4-fb38-490c-99f8-60f3a6f7d153"
+              }
+            }
+          ],
+          "resource_timing": [
+            {
+              "fetch_to_headers_ms": 2.5,
+              "fetch_to_end_ms": 164,
+              "request_start_ms": 0.5
+            }
+          ],
+          "backend_ms": {
+            "session": 0.66,
+            "history": 0.32,
+            "route": 1.53,
+            "first_model_response": 44.81,
+            "model_tool_selection": 41.21,
+            "first_event": 44.87,
+            "api_calls": 18.19,
+            "api.knowledge.search": 18.19,
+            "tools": 18.5,
+            "tool.search_docs": 18.5,
+            "model_answer": 87.94,
+            "model_followup": 87.94,
+            "guard": 1.28,
+            "persist": 2.08,
+            "reply": 160.88,
+            "total": 161.2
+          },
+          "backend_count": {
+            "session": 1,
+            "history": 1,
+            "route": 1,
+            "first_model_response": 1,
+            "model_tool_selection": 1,
+            "first_event": 1,
+            "api_calls": 1,
+            "api.knowledge.search": 1,
+            "tools": 1,
+            "tool.search_docs": 1,
+            "model_answer": 2,
+            "model_followup": 2,
+            "guard": 2,
+            "persist": 1,
+            "reply": 1,
+            "total": 1
+          },
+          "model_calls": 3,
+          "tool_calls": 1,
+          "adapter_calls": 1,
+          "adapter_calls_by_operation": {
+            "knowledge.search": 1
+          },
+          "model_request_bytes": [
+            5426,
+            6326,
+            6750
+          ],
+          "model_request_metrics": [
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 102,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 1
+            },
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 1002,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 3
+            },
+            {
+              "instructions_bytes": 3099,
+              "tool_definitions_bytes": 1901,
+              "input_bytes": 1426,
+              "tool_names": [
+                "get_permitted_sites",
+                "search_docs",
+                "prepare_support_ticket"
+              ],
+              "input_items": 4
+            }
+          ],
+          "ui_command_count": 0
+        }
+      ]
+    }
+  }
+}

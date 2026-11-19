@@ -13,7 +13,11 @@ from alsense_chat.runner import guard
 from alsense_chat.store import Store
 from alsense_chat.tools import Context
 
-DASHBOARD = ("Open the alarms dashboard", "Filter critical and high alarms")
+DASHBOARD = (
+    "Open the alarms dashboard",
+    "Filter critical and high alarms",
+    "Open the alarms page and show only critical and high priority alarms.",
+)
 REPORT = "Create a temperature report for Demo North for the last seven days"
 CLAIMED = re.compile(r"\b(?:opened|filtered|applied)\b", re.IGNORECASE)
 
@@ -68,6 +72,25 @@ def test_a_model_call_to_a_dashboard_tool_is_refused(tmp_path, monkeypatch):
     [output] = [item for item in requests[1]["input"] if item.get("type") == "function_call_output"]
     assert json.loads(output["output"]) == {"error": "Unknown tool.", "category": "unknown_tool"}
     assert (answer["status"], answer["actions"], answer["sources"]) == ("out_of_scope", [], [])
+
+
+def test_exact_page_request_still_authenticates_and_rejects_invalid_tool_arguments(tmp_path, monkeypatch):
+    requests: list[dict] = []
+    outputs = [
+        ("get_permitted_sites", {"name": "Demo North", "priority": ["critical", "high"]}),
+        {"status": "out_of_scope", "text": "I can't open or filter the alarms page here.", "source_ids": []},
+    ]
+    with app_client(tmp_path, **foundry(monkeypatch, outputs, requests)) as client:
+        assert client.post("/api/chat", json={"message": DASHBOARD[-1]}).status_code == 401
+        assert requests == []
+        headers = login(client)
+        answer = reply(client, headers, DASHBOARD[-1])
+        assert answer["actions"] == [] and answer["sources"] == []
+    [output] = [item for item in requests[1]["input"] if item.get("type") == "function_call_output"]
+    assert json.loads(output["output"])["category"] == "invalid_input"
+    records = Store(str(tmp_path / "test.sqlite3")).audit_trail()
+    [chat] = [record for record in records if record["event"] == "chat"]
+    assert "api_calls" not in chat["timings"]["count"]
 
 
 @pytest.mark.parametrize(

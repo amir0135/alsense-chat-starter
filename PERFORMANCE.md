@@ -1,5 +1,9 @@
 # Latency investigation
 
+For the focused follow-up using **“Open the alarms page and show only critical and high priority alarms.”**,
+see [Dashboard navigation latency](DASHBOARD_LATENCY.md): six exact request paths, seven-stage breakdown,
+real headless-browser receipt/render measurements and unchanged-source before/after controls.
+
 ## Result and limits
 
 The measured, low-risk optimization is **reuse of report-catalog metadata within draft preparation**. Preparation
